@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HissabBook • Team</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: "#2357FF",
+              dark: "#111827",
+            },
+            fontFamily: {
+              sans: ["Inter", "ui-sans-serif", "system-ui"],
+            },
+            boxShadow: {
+              panel: "0 20px 45px rgba(15, 23, 42, 0.08)",
+            },
+          },
+        },
+      };
+    </script>
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+    />
+  </head>
+  <body class="min-h-screen bg-slate-50 font-sans text-dark">
+    <div class="flex min-h-screen flex-col">
+      <header class="flex items-center justify-between border-b border-slate-100 bg-white px-6 py-4">
+        <div class="flex items-center gap-3">
+          <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-lg font-bold text-primary">
+            H
+          </span>
+          <span class="text-lg font-semibold text-dark">HissabBook UPI</span>
+        </div>
+        <div class="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm">
+          <span class="mr-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+            K
+          </span>
+          Kripa
+          <svg class="ml-2 inline h-4 w-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6" />
+          </svg>
+        </div>
+      </header>
+
+      <div class="flex flex-1">
+        <aside class="hidden w-64 flex-shrink-0 border-r border-slate-100 bg-white px-4 py-8 lg:block">
+          <nav class="space-y-6 text-sm font-medium text-slate-500">
+            <div>
+              <p class="text-xs uppercase tracking-[0.4em] text-slate-400">HissabBook UPI</p>
+              <div class="mt-3 space-y-2">
+                <a class="block rounded-xl px-3 py-2 hover:bg-slate-100" href="#">Dashboard</a>
+                <a class="block rounded-xl px-3 py-2 hover:bg-slate-100" href="#">Wallets</a>
+                <a class="block rounded-xl px-3 py-2 hover:bg-slate-100" href="#">Approvals</a>
+                <a class="block rounded-xl px-3 py-2 hover:bg-slate-100" href="#">All Transactions</a>
+              </div>
+            </div>
+            <div>
+              <p class="text-xs uppercase tracking-[0.4em] text-slate-400">Book Keeping</p>
+              <a class="mt-3 block rounded-xl px-3 py-2 hover:bg-slate-100" href="#">Cashbooks</a>
+            </div>
+            <div>
+              <p class="text-xs uppercase tracking-[0.4em] text-slate-400">Settings</p>
+              <div class="mt-3 space-y-2">
+                <a class="block rounded-xl bg-primary/10 px-3 py-2 font-semibold text-primary" href="#">Team</a>
+                <a class="block rounded-xl px-3 py-2 hover:bg-slate-100" href="#">Business Settings</a>
+                <a class="block rounded-xl px-3 py-2 hover:bg-slate-100" href="#">Payment Settings</a>
+              </div>
+            </div>
+            <div>
+              <p class="text-xs uppercase tracking-[0.4em] text-slate-400">Others</p>
+              <a class="mt-3 block rounded-xl px-3 py-2 hover:bg-slate-100" href="#">Refer &amp; Earn</a>
+              <a class="mt-3 block rounded-xl px-3 py-2 hover:bg-slate-100" href="#">Help &amp; Support</a>
+            </div>
+          </nav>
+        </aside>
+
+        <main class="flex-1 bg-slate-50">
+          <div class="mx-auto flex max-w-6xl flex-col gap-8 px-6 py-10">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h1 class="text-xl font-semibold text-dark">Total Members (1)</h1>
+              </div>
+              <div class="flex flex-wrap items-center gap-4 text-sm font-semibold text-primary">
+                <a class="hover:underline" href="#">View roles &amp; permissions</a>
+                <button class="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-white shadow-[0_20px_45px_rgba(35,87,255,0.25)] hover:-translate-y-0.5">
+                  <span class="text-lg">👥</span>
+                  Add team member
+                </button>
+              </div>
+            </div>
+
+            <section class="rounded-[40px] border border-slate-100 bg-white p-12 text-center shadow-panel">
+              <h2 class="text-lg font-semibold text-dark">Add members &amp; assign roles</h2>
+              <p class="mt-3 text-sm text-slate-500">Give access to books and permissions tailored to each teammate.</p>
+              <div class="mt-12 flex flex-col items-center justify-center gap-10 md:flex-row">
+                <div class="flex flex-col items-center gap-2">
+                  <div class="flex h-20 w-20 items-center justify-center rounded-full bg-primary/10 text-xl font-semibold text-primary">
+                    👤
+                  </div>
+                  <p class="text-sm font-semibold text-dark">You (Owner)</p>
+                </div>
+                <div class="flex flex-col items-center gap-3 text-sm text-slate-500 md:flex-row">
+                  <span class="text-2xl text-slate-300">⟶</span>
+                  <div class="flex flex-col items-center gap-2">
+                    <div class="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-lg">🤝</div>
+                    <p class="font-semibold text-dark">Business Partner</p>
+                    <p class="text-xs uppercase tracking-[0.3em] text-emerald-500">Full Access</p>
+                  </div>
+                  <span class="text-2xl text-slate-300">⟶</span>
+                  <div class="flex flex-col items-center gap-2">
+                    <div class="flex h-16 w-16 items-center justify-center rounded-full bg-sky-100 text-lg">🧑‍💼</div>
+                    <p class="font-semibold text-dark">Staff Members</p>
+                    <p class="text-xs uppercase tracking-[0.3em] text-sky-500">Limited Access</p>
+                  </div>
+                </div>
+              </div>
+              <div class="mt-12 grid gap-4 text-sm text-slate-500 md:grid-cols-3">
+                <div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  Assign admins to manage approvals and category policies.
+                </div>
+                <div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  Provide view-only access for auditors or partners.
+                </div>
+                <div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  Track member status, invites, and acceptance in real time.
+                </div>
+              </div>
+            </section>
+          </div>
+        </main>
+      </div>
+    </div>
+  </body>
+</html>
+

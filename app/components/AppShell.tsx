@@ -1,0 +1,299 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState, useEffect, useRef } from "react";
+import type { ReactNode } from "react";
+import { getUser, clearAuth } from "../utils/auth";
+
+type NavItem = {
+  label: string;
+  href: string;
+  icon: keyof typeof iconMap;
+};
+
+type NavSection = {
+  title: string;
+  items: NavItem[];
+};
+
+type AppShellProps = {
+  activePath: string;
+  children: ReactNode;
+};
+
+const iconMap = {
+  dashboard: (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
+      <path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v4h8V3h-8z" />
+    </svg>
+  ),
+  wallet: (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
+      <rect x="3" y="6" width="18" height="12" rx="3" />
+      <path d="M16 12h3" strokeLinecap="round" />
+    </svg>
+  ),
+  approvals: (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
+      <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="3" y="4" width="18" height="16" rx="3" />
+    </svg>
+  ),
+  payout: (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
+      <path d="M12 3v18" strokeLinecap="round" />
+      <path d="M7 8l5-5 5 5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M17 16l-5 5-5-5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  account: (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 20c1.8-3 4.6-5 8-5s6.2 2 8 5" strokeLinecap="round" />
+    </svg>
+  ),
+  settings: (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
+      <path d="M11 2h2l1 3.1a7 7 0 012.6 1.5L20 6l1 2-2.4 1.8a7 7 0 01.1 2.4L21 14l-1 2-2.6-.6a7 7 0 01-2.6 1.6L13 22h-2l-1-3a7 7 0 01-2.6-1.6L5 16l-1-2 2.4-1.8a7 7 0 01-.1-2.4L3 8l1-2 2.6.6A7 7 0 019.2 5.1z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  ),
+} as const;
+
+const navSections: NavSection[] = [
+  {
+    title: "HissabBook UPI",
+    items: [
+      { label: "Dashboard", href: "/dashboard", icon: "dashboard" },
+      { label: "Wallets", href: "/wallets", icon: "wallet" },
+      { label: "Approvals", href: "/approvals", icon: "approvals" },
+      { label: "Request Payout", href: "/request-payout", icon: "payout" },
+    ],
+  },
+  {
+    title: "Account",
+    items: [{ label: "Account Info", href: "/account-info", icon: "account" }],
+  },
+  {
+    title: "Settings",
+    items: [{ label: "Settings", href: "/settings", icon: "settings" }],
+  },
+];
+
+export default function AppShell({ activePath, children }: AppShellProps) {
+  const router = useRouter();
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [userName, setUserName] = useState("User");
+  const [userInitial, setUserInitial] = useState("U");
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Get user info on mount
+  useEffect(() => {
+    const user = getUser();
+    if (user) {
+      let displayName = "User";
+      let initial = "U";
+      
+      // Prefer phone number if available (for phone-based users)
+      if (user.phone) {
+        // Format phone number: +91 98765 43210
+        const phone = user.phone;
+        if (phone.startsWith("91") && phone.length === 12) {
+          displayName = `+${phone.slice(0, 2)} ${phone.slice(2, 7)} ${phone.slice(7)}`;
+          initial = "+";
+        } else {
+          displayName = user.phone;
+          initial = "+";
+        }
+      } else {
+        // Extract name from email or use email as fallback
+        const emailName = user.email?.split("@")[0] || "";
+        
+        // Handle temp email format (phone_919876543210@hissabbook.temp)
+        if (emailName.startsWith("phone_")) {
+          const phoneNumber = emailName.replace("phone_", "");
+          if (phoneNumber.startsWith("91") && phoneNumber.length === 12) {
+            displayName = `+${phoneNumber.slice(0, 2)} ${phoneNumber.slice(2, 7)} ${phoneNumber.slice(7)}`;
+            initial = "+";
+          } else {
+            displayName = `+${phoneNumber}`;
+            initial = "+";
+          }
+        } else if (emailName) {
+          // Capitalize first letter of email name
+          displayName = emailName.charAt(0).toUpperCase() + emailName.slice(1);
+          initial = displayName.charAt(0).toUpperCase();
+        }
+      }
+      
+      setUserName(displayName);
+      setUserInitial(initial);
+    }
+  }, []);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    }
+
+    if (isDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isDropdownOpen]);
+
+  const handleLogout = () => {
+    clearAuth();
+    router.push("/login");
+  };
+
+  return (
+    <div className="flex min-h-screen bg-[#f5f7ff] font-sans text-[#111827]">
+      <aside className="hidden w-72 flex-shrink-0 border-r border-slate-200 bg-white px-5 py-8 lg:block">
+        <div className="flex items-center gap-3 px-4 pb-8">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#2f4bff] text-lg font-bold text-white">
+            H
+          </span>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[#2f4bff]">Console</p>
+            <span className="text-lg font-semibold text-[#111827]">HissabBook</span>
+          </div>
+        </div>
+        <nav className="space-y-8 text-sm font-medium text-[#1f2937]">
+          {navSections.map((section) => (
+            <div key={section.title}>
+              <p className="flex items-center justify-between px-4 text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">
+                {section.title}
+                <svg className="h-3 w-3 text-slate-300" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </p>
+              <div className="mt-4 space-y-2">
+                {section.items.map((item) => {
+                  const active = activePath === item.href;
+                  return (
+                    <Link
+                      key={item.label}
+                      href={item.href}
+                      className={`group flex items-center gap-3 rounded-xl px-4 py-3 transition ${
+                        active ? "bg-[#2f4bff] text-white shadow-[0_8px_18px_rgba(47,75,255,0.35)]" : "hover:bg-slate-100"
+                      }`}
+                    >
+                      <span
+                        className={`flex h-8 w-8 items-center justify-center rounded-lg ${
+                          active ? "bg-white/15 text-white" : "bg-slate-100 text-[#334155] group-hover:bg-slate-200"
+                        }`}
+                      >
+                        {iconMap[item.icon]}
+                      </span>
+                      <span className={`text-sm font-medium ${active ? "text-white" : "text-[#1f2937]"}`}>
+                        {item.label}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
+      </aside>
+
+      <div className="flex flex-1 flex-col">
+        <header className="flex items-center justify-between border-b border-slate-200 bg-white px-8 py-4">
+          <div>
+            <h1 className="text-lg font-semibold text-[#111827]">Payments Console</h1>
+            <p className="text-sm text-slate-500">Manage wallets, approvals and payouts effortlessly.</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-[#2f4bff] transition hover:border-[#2f4bff]">
+              <span className="sr-only">Notifications</span>
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              </svg>
+            </button>
+            <div className="relative" ref={dropdownRef}>
+              <button
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-[#1f2937] transition hover:border-[#2f4bff]"
+              >
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#2f4bff]/10 text-sm font-semibold text-[#2f4bff]">
+                  {userInitial}
+                </span>
+                {userName}
+                <svg
+                  className={`h-4 w-4 text-slate-400 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {isDropdownOpen && (
+                <div className="absolute right-0 z-50 mt-2 w-56 rounded-xl border border-slate-200 bg-white shadow-lg">
+                  <div className="py-2">
+                    <Link
+                      href="/account-info"
+                      onClick={() => setIsDropdownOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2 text-sm text-[#1f2937] transition hover:bg-slate-50"
+                    >
+                      <span className="flex h-5 w-5 items-center justify-center text-slate-400">
+                        {iconMap.account}
+                      </span>
+                      <span>Account Info</span>
+                    </Link>
+                    <Link
+                      href="/settings"
+                      onClick={() => setIsDropdownOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2 text-sm text-[#1f2937] transition hover:bg-slate-50"
+                    >
+                      <span className="flex h-5 w-5 items-center justify-center text-slate-400">
+                        {iconMap.settings}
+                      </span>
+                      <span>Settings</span>
+                    </Link>
+                    <div className="my-2 border-t border-slate-200"></div>
+                    <button
+                      onClick={handleLogout}
+                      className="flex w-full items-center gap-3 px-4 py-2 text-sm text-rose-600 transition hover:bg-slate-50"
+                    >
+                      <svg
+                        className="h-5 w-5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                        />
+                      </svg>
+                      <span>Logout</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-1 bg-[#f7f9ff] px-8 py-10">
+          <div className="mx-auto w-full max-w-5xl">{children}</div>
+        </main>
+      </div>
+    </div>
+  );
+}
+
+  

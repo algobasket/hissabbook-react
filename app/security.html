@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HissabBook • Security</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: "#2357FF",
+              dark: "#0F172A",
+            },
+            fontFamily: {
+              sans: ["Inter", "ui-sans-serif", "system-ui"],
+            },
+            boxShadow: {
+              card: "0 22px 60px rgba(15, 23, 42, 0.09)",
+            },
+          },
+        },
+      };
+    </script>
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+    />
+  </head>
+  <body class="bg-slate-50 font-sans text-dark">
+    <header class="border-b border-slate-100 bg-white">
+      <div class="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
+        <div class="flex items-center gap-2">
+          <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-lg font-bold text-primary">
+            H
+          </span>
+          <span class="text-xl font-semibold text-dark">HissabBook</span>
+        </div>
+        <nav class="hidden items-center gap-8 text-sm font-medium text-slate-500 lg:flex">
+          <a class="transition hover:text-primary" href="#">Home</a>
+          <a class="transition hover:text-primary" href="#">Customers</a>
+          <a class="transition hover:text-primary" href="#">Pricing</a>
+          <a class="transition text-primary hover:text-primary" href="#">Security</a>
+          <a class="transition hover:text-primary" href="#">Book Keeping</a>
+          <a class="transition hover:text-primary" href="#">Blogs</a>
+          <a class="transition hover:text-primary" href="#">About Us</a>
+        </nav>
+        <div class="hidden items-center gap-4 text-sm font-semibold lg:flex">
+          <a class="text-slate-500 transition hover:text-primary" href="#">Login/Register</a>
+          <button class="rounded-full border border-slate-200 px-5 py-2 text-slate-700 shadow-sm transition hover:border-primary hover:text-primary">
+            Download App
+          </button>
+        </div>
+        <button class="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 lg:hidden">
+          <span class="sr-only">Menu</span>
+          <svg class="h-6 w-6 text-slate-600" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <section class="bg-white">
+        <div class="mx-auto grid max-w-6xl items-center gap-12 px-6 py-16 lg:grid-cols-2">
+          <div class="space-y-6">
+            <span class="inline-flex items-center gap-3 rounded-full border border-primary/20 bg-primary/5 px-4 py-2 text-xs font-semibold uppercase tracking-[0.4em] text-primary">
+              Security First
+            </span>
+            <h1 class="text-4xl font-bold leading-tight text-dark lg:text-[42px]">
+              Secure spends. <span class="text-primary">Zero stress.</span>
+            </h1>
+            <p class="text-base text-slate-500">
+              Every swipe, every invoice, and every employee expense on HissabBook is protected by the same controls India’s leading banks rely on.
+            </p>
+            <div class="flex flex-wrap items-center gap-4">
+              <button class="rounded-full bg-primary px-6 py-3 text-sm font-semibold text-white shadow-[0_20px_50px_rgba(35,87,255,0.25)] transition hover:-translate-y-0.5">
+                Book a Demo
+              </button>
+              <button class="rounded-full border border-slate-200 px-6 py-3 text-sm font-semibold text-dark transition hover:border-primary hover:text-primary">
+                Watch Video
+              </button>
+            </div>
+            <div class="flex flex-wrap items-center gap-6 text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+              <span>UPI</span>
+              <span>NPCI</span>
+              <span>Razorpay</span>
+            </div>
+          </div>
+          <div class="flex justify-center">
+            <div class="h-80 w-64 rounded-[40px] bg-gradient-to-br from-primary/15 via-white to-primary/25"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="bg-slate-50 py-20">
+        <div class="mx-auto max-w-6xl px-6">
+          <div class="text-center">
+            <h2 class="text-3xl font-bold text-dark">Security Features</h2>
+            <p class="mt-3 text-base text-slate-500">Your safety comes first.</p>
+          </div>
+          <div class="mt-12 grid gap-6 md:grid-cols-2">
+            <article class="rounded-[32px] border border-slate-100 bg-white p-8 shadow-card">
+              <h3 class="text-lg font-semibold text-dark">Secure Screen Authentications</h3>
+              <p class="mt-3 text-sm text-slate-500">Protected with fingerprint/face ID, wallet PIN and OTP for every authentication.</p>
+            </article>
+            <article class="rounded-[32px] border border-slate-100 bg-white p-8 shadow-card">
+              <h3 class="text-lg font-semibold text-dark">Bank Grade Encryption</h3>
+              <p class="mt-3 text-sm text-slate-500">Industry-standard encryption protocols and multi-factor authentication.</p>
+            </article>
+            <article class="rounded-[32px] border border-slate-100 bg-white p-8 shadow-card">
+              <h3 class="text-lg font-semibold text-dark">Security Audits</h3>
+              <p class="mt-3 text-sm text-slate-500">Annual security audits by CERT-IN empanelled partners.</p>
+            </article>
+            <article class="rounded-[32px] border border-slate-100 bg-white p-8 shadow-card">
+              <h3 class="text-lg font-semibold text-dark">Approved by NPCI</h3>
+              <p class="mt-3 text-sm text-slate-500">Certified to enable UPI transactions with comprehensive regulatory coverage.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="bg-white py-20">
+        <div class="mx-auto max-w-5xl px-6 text-center">
+          <p class="text-sm font-semibold uppercase tracking-[0.4em] text-primary">Our Customers</p>
+          <p class="mt-3 text-base text-slate-500">UPI wallets trusted by 1,500+ businesses.</p>
+          <div class="mt-8 flex flex-wrap items-center justify-center gap-8 text-sm font-semibold text-slate-500">
+            <span>LangEed</span>
+            <span>Mapro</span>
+            <span>Opus</span>
+            <span>Swish</span>
+            <span>YoloBus</span>
+            <span>Better Tomorrow</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="bg-slate-50 py-20">
+        <div class="mx-auto grid max-w-6xl gap-10 px-6 lg:grid-cols-[1.2fr_0.8fr]">
+          <div class="space-y-8 rounded-[32px] border border-slate-100 bg-white p-10 text-center shadow-card">
+            <h2 class="text-2xl font-semibold text-dark">Your safety is our priority</h2>
+            <p class="text-sm text-slate-500">
+              We are committed to providing a safe and secure platform. Every workflow is built with compliance-first principles.
+            </p>
+            <div class="h-48 rounded-3xl bg-gradient-to-br from-primary/10 via-white to-primary/20"></div>
+            <p class="text-xs uppercase tracking-[0.3em] text-slate-400">CashBook Payments maintains the highest level of security standards</p>
+            <div class="flex flex-wrap items-center justify-center gap-3 text-xs font-semibold uppercase tracking-[0.3em] text-primary">
+              <span>Ensuring Secure Payments</span>
+              <span>Introduced CashBook Payments</span>
+            </div>
+          </div>
+          <div class="space-y-6">
+            <div class="rounded-[32px] border border-slate-100 bg-white p-8 shadow-card">
+              <h3 class="text-lg font-semibold text-dark">Found anything suspicious?</h3>
+              <p class="mt-3 text-sm text-slate-500">Report it to us immediately. Our compliance team monitors fraudulent behaviour 24/7.</p>
+              <button class="mt-6 w-full rounded-full border border-slate-200 px-6 py-3 text-sm font-semibold text-dark transition hover:border-primary hover:text-primary">
+                Report Fraud
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="bg-white py-20">
+        <div class="mx-auto max-w-4xl px-6 text-center">
+          <p class="text-sm font-semibold uppercase tracking-[0.3em] text-primary">FAQs</p>
+          <h2 class="mt-3 text-3xl font-bold text-dark">All your questions — answered</h2>
+          <div class="mt-10 space-y-4 text-left">
+            <details class="group rounded-2xl border border-slate-100 bg-slate-50 p-6 shadow-card">
+              <summary class="flex cursor-pointer items-center justify-between text-base font-semibold text-dark">
+                How secure is my information on HissabBook?
+                <span class="ml-4 text-primary transition group-open:rotate-45">+</span>
+              </summary>
+              <p class="mt-4 text-sm text-slate-500">
+                We protect all information with bank-grade encryption, access controls, and regular security audits.
+              </p>
+            </details>
+            <details class="group rounded-2xl border border-slate-100 bg-slate-50 p-6 shadow-card">
+              <summary class="flex cursor-pointer items-center justify-between text-base font-semibold text-dark">
+                Is it safe to transfer money through the app?
+                <span class="ml-4 text-primary transition group-open:rotate-45">+</span>
+              </summary>
+              <p class="mt-4 text-sm text-slate-500">
+                Yes. UPI transactions are routed through RBI-regulated partner banks with NPCI-certified compliance.
+              </p>
+            </details>
+            <details class="group rounded-2xl border border-slate-100 bg-slate-50 p-6 shadow-card">
+              <summary class="flex cursor-pointer items-center justify-between text-base font-semibold text-dark">
+                What can I do to keep my transactions safe?
+                <span class="ml-4 text-primary transition group-open:rotate-45">+</span>
+              </summary>
+              <p class="mt-4 text-sm text-slate-500">
+                Enable biometric authentication, set wallet PINs, and configure spend limits for every employee wallet.
+              </p>
+            </details>
+            <details class="group rounded-2xl border border-slate-100 bg-slate-50 p-6 shadow-card">
+              <summary class="flex cursor-pointer items-center justify-between text-base font-semibold text-dark">
+                What if someone tries to login to my account?
+                <span class="ml-4 text-primary transition group-open:rotate-45">+</span>
+              </summary>
+              <p class="mt-4 text-sm text-slate-500">
+                We alert you instantly via email/SMS and require OTP verification. You can freeze wallets with one tap.
+              </p>
+            </details>
+            <details class="group rounded-2xl border border-slate-100 bg-slate-50 p-6 shadow-card">
+              <summary class="flex cursor-pointer items-center justify-between text-base font-semibold text-dark">
+                How do I register a fraud complaint?
+                <span class="ml-4 text-primary transition group-open:rotate-45">+</span>
+              </summary>
+              <p class="mt-4 text-sm text-slate-500">
+                Contact our 24/7 compliance desk or raise a ticket within the app. We respond within four working hours.
+              </p>
+            </details>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="border-t border-slate-200 bg-slate-50">
+      <div class="mx-auto max-w-6xl px-6 py-12">
+        <div class="grid gap-10 md:grid-cols-4">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-sm font-bold text-primary">H</span>
+              <span class="text-lg font-semibold text-dark">HissabBook</span>
+            </div>
+            <p class="mt-4 text-sm text-slate-500">
+              Anudita Technology Private Limited<br />
+              2nd Floor, Wave Silver Tower, Sector 18,<br />
+              Noida – 201301, Uttar Pradesh, India
+            </p>
+            <div class="mt-4 flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
+              <span class="rounded-full border border-slate-200 px-3 py-2">in</span>
+              <span class="rounded-full border border-slate-200 px-3 py-2">x</span>
+              <span class="rounded-full border border-slate-200 px-3 py-2">@</span>
+              <span class="rounded-full border border-slate-200 px-3 py-2">yt</span>
+            </div>
+          </div>
+          <div>
+            <h4 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Company</h4>
+            <ul class="mt-4 space-y-2 text-sm text-slate-600">
+              <li><a class="transition hover:text-primary" href="#">Pricing</a></li>
+              <li><a class="transition hover:text-primary" href="#">About Us</a></li>
+              <li><a class="transition hover:text-primary" href="#">Contact Us</a></li>
+              <li><a class="transition hover:text-primary" href="#">Customers</a></li>
+            </ul>
+          </div>
+          <div>
+            <h4 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Resources</h4>
+            <ul class="mt-4 space-y-2 text-sm text-slate-600">
+              <li><a class="transition hover:text-primary" href="#">Security Guide</a></li>
+              <li><a class="transition hover:text-primary" href="#">Blogs</a></li>
+              <li><a class="transition hover:text-primary" href="#">FAQs</a></li>
+              <li><a class="transition hover:text-primary" href="#">UPI Limits</a></li>
+            </ul>
+          </div>
+          <div>
+            <h4 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Legal</h4>
+            <ul class="mt-4 space-y-2 text-sm text-slate-600">
+              <li><a class="transition hover:text-primary" href="#">Privacy Policy</a></li>
+              <li><a class="transition hover:text-primary" href="#">Refund Policy</a></li>
+              <li><a class="transition hover:text-primary" href="#">Terms &amp; Conditions</a></li>
+              <li><a class="transition hover:text-primary" href="#">Anti-bribery Policy</a></li>
+            </ul>
+          </div>
+        </div>
+        <div class="mt-12 flex flex-col gap-4 border-t border-slate-200 pt-6 text-sm text-slate-500 md:flex-row md:items-center md:justify-between">
+          <span>© 2025 HissabBook. All rights reserved.</span>
+          <div class="flex items-center gap-3">
+            <span class="inline-flex h-10 items-center rounded-full bg-slate-900 px-4 text-xs font-semibold text-white">
+              Get it on Play Store
+            </span>
+            <span class="inline-flex h-10 items-center rounded-full border border-slate-300 px-4 text-xs font-semibold text-slate-700">
+              Download on App Store
+            </span>
+          </div>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
+
