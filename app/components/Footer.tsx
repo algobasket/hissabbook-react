@@ -27,14 +27,14 @@ export default function Footer() {
             {/* Address */}
             <div className="space-y-2">
               <p className="text-sm font-semibold leading-relaxed text-slate-700">
-                Anudita Technology Private Limited
+                HissabBook Enterprises Private Limited
               </p>
               <p className="text-sm leading-relaxed text-slate-600">
                 2nd Floor, Wave Silver Tower,
                 <br />
                 Sector 18,
                 <br />
-                Noida – 201301, Uttar Pradesh, India
+                Dubai – 11551, UAE
               </p>
             </div>
 
@@ -151,7 +151,8 @@ export default function Footer() {
           {/* Copyright */}
           <div className="flex flex-col gap-2">
             <p className="text-sm font-semibold text-slate-700">
-              © 2025 HissabBook. All rights reserved.
+              © 2025 HissabBook. All rights reserved. <br />
+              Build, Develop & Maintain By Algobasket
             </p>
           </div>
 
@@ -196,5 +197,6 @@ export default function Footer() {
     </footer>
   );
 }
+
 
 
