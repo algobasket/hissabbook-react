@@ -1,6 +1,9 @@
 # React Frontend Dockerfile
 FROM node:20-alpine
 
+# Install necessary packages for Next.js
+RUN apk add --no-cache libc6-compat
+
 # Set working directory
 WORKDIR /app
 
@@ -26,4 +29,3 @@ ENV HOSTNAME="0.0.0.0"
 
 # Start the application
 CMD ["npm", "start"]
-
