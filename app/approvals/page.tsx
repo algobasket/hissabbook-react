@@ -6,7 +6,7 @@ import ProtectedRoute from "../components/ProtectedRoute";
 import { getAuthToken } from "../utils/auth";
 
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "http://localhost:4000";
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
 
 interface PayoutRequest {
   id: string;
