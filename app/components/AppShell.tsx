@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import type { ReactNode } from "react";
-import { getUser, clearAuth } from "../utils/auth";
+import { getUser, clearAuth, getUserRole } from "../utils/auth";
+import BusinessSelector from "./BusinessSelector";
 
 type NavItem = {
   label: string;
@@ -59,9 +60,32 @@ const iconMap = {
       <circle cx="12" cy="12" r="3" />
     </svg>
   ),
+  cashbooks: (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
+      <path d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+    </svg>
+  ),
+  team: (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
+      <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
+    </svg>
+  ),
+  business: (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
+      <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+    </svg>
+  ),
+  subscription: (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
+      <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+    </svg>
+  ),
 } as const;
 
-const navSections: NavSection[] = [
+// All available navigation sections
+const allNavSections: NavSection[] = [
   {
     title: "HissabBook UPI",
     items: [
@@ -81,16 +105,58 @@ const navSections: NavSection[] = [
   },
 ];
 
+// Manager-specific navigation sections
+const managerNavSections: NavSection[] = [
+  {
+    title: "Book Keeping",
+    items: [
+      { label: "Cashbooks", href: "/cashbooks", icon: "cashbooks" },
+    ],
+  },
+  {
+    title: "Settings",
+    items: [
+      { label: "Team", href: "/team", icon: "team" },
+      { label: "Business Settings", href: "/settings", icon: "business" },
+      { label: "Subscription", href: "/subscription", icon: "subscription" },
+    ],
+  },
+];
+
 export default function AppShell({ activePath, children }: AppShellProps) {
   const router = useRouter();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [userName, setUserName] = useState("User");
   const [userInitial, setUserInitial] = useState("U");
+  const [userRole, setUserRole] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Get user role and filter navigation based on role
+  const navSections = useMemo(() => {
+    if (userRole === "managers" || userRole === "manager") {
+      return managerNavSections;
+    }
+    
+    // For staff users, remove Settings section
+    if (userRole === "staff") {
+      return allNavSections.map(section => {
+        if (section.title === "Settings") {
+          return { ...section, items: [] }; // Remove Settings item
+        }
+        return section;
+      }).filter(section => section.items.length > 0); // Remove empty sections
+    }
+    
+    return allNavSections;
+  }, [userRole]);
 
   // Get user info on mount
   useEffect(() => {
     const user = getUser();
+    const role = getUserRole();
+    console.log("AppShell - User role:", role, "User:", user);
+    setUserRole(role);
+    
     if (user) {
       let displayName = "User";
       let initial = "U";
@@ -148,6 +214,17 @@ export default function AppShell({ activePath, children }: AppShellProps) {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isDropdownOpen]);
+
+  const formatRoleName = (role: string | null): string => {
+    if (!role) return "User";
+    // Handle common role names
+    if (role === "managers" || role === "manager") return "Manager";
+    // Capitalize first letter and replace underscores with spaces
+    return role
+      .split("_")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(" ");
+  };
 
   const handleLogout = () => {
     clearAuth();
@@ -208,8 +285,13 @@ export default function AppShell({ activePath, children }: AppShellProps) {
       <div className="flex flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-8 py-4">
           <div>
-            <h1 className="text-lg font-semibold text-[#111827]">Payments Console</h1>
-            <p className="text-sm text-slate-500">Manage wallets, approvals and payouts effortlessly.</p>
+            <h1 className="text-lg font-semibold text-[#111827]">
+              Welcome {formatRoleName(userRole)}
+            </h1>
+            <p className="text-sm text-slate-500">Manage all your businesses, cashbook and staff all in one place</p>
+          </div>
+          <div className="flex items-center justify-center flex-1">
+            {(userRole === "managers" || userRole === "manager") && <BusinessSelector />}
           </div>
           <div className="flex items-center gap-3">
             <button className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-[#2f4bff] transition hover:border-[#2f4bff]">
@@ -289,7 +371,7 @@ export default function AppShell({ activePath, children }: AppShellProps) {
         </header>
 
         <main className="flex-1 bg-[#f7f9ff] px-8 py-10">
-          <div className="mx-auto w-full max-w-5xl">{children}</div>
+          <div className="mx-auto w-full">{children}</div>
         </main>
       </div>
     </div>

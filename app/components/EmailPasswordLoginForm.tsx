@@ -21,15 +21,85 @@ type ApiResponse = {
 
 interface EmailPasswordLoginFormProps {
   onSwitchToOtp?: () => void;
+  onLoginSuccess?: (token: string, user: any) => void;
+  defaultEmail?: string;
 }
 
-export default function EmailPasswordLoginForm({ onSwitchToOtp }: EmailPasswordLoginFormProps) {
-  const [email, setEmail] = useState("");
+export default function EmailPasswordLoginForm({ onSwitchToOtp, onLoginSuccess, defaultEmail }: EmailPasswordLoginFormProps) {
+  const [email, setEmail] = useState(defaultEmail || "");
   const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [usePassword, setUsePassword] = useState(false);
   const [step, setStep] = useState<Step>("enter");
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const loginWithPassword = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setStatus(null);
+    setError(null);
+
+    if (!email.trim() || !email.includes("@")) {
+      setError("Enter a valid email address");
+      return;
+    }
+
+    if (!password.trim()) {
+      setError("Enter your password");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as ApiResponse;
+        throw new Error(data.message || "Invalid email or password");
+      }
+
+      const userData = (await response.json()) as ApiResponse;
+
+      // Store token in localStorage
+      if (userData.token && userData.user) {
+        localStorage.setItem("authToken", userData.token);
+        localStorage.setItem("user", JSON.stringify(userData.user));
+
+        // If onLoginSuccess callback is provided, use it instead of redirecting
+        if (onLoginSuccess) {
+          onLoginSuccess(userData.token, userData.user);
+          return;
+        }
+
+        // Check if user is admin - admin should use admin panel
+        const userRole = userData.user.role || userData.user.roles?.[0];
+        if (userRole === "admin") {
+          setStatus("Admin users should use the admin panel. Redirecting...");
+          setTimeout(() => {
+            window.location.href = process.env.NEXT_PUBLIC_ADMIN_URL || "/admin";
+          }, 2000);
+          return;
+        }
+
+        setStatus("Login successful! Redirecting to dashboard...");
+        // Redirect to dashboard
+        setTimeout(() => {
+          window.location.href = "/dashboard";
+        }, 1000);
+      } else {
+        throw new Error("Invalid response from server");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to login");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const sendOtp = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -105,6 +175,12 @@ export default function EmailPasswordLoginForm({ onSwitchToOtp }: EmailPasswordL
         localStorage.setItem("authToken", userData.token);
         localStorage.setItem("user", JSON.stringify(userData.user));
 
+        // If onLoginSuccess callback is provided, use it instead of redirecting
+        if (onLoginSuccess) {
+          onLoginSuccess(userData.token, userData.user);
+          return;
+        }
+
         // Check if user is admin - admin should use admin panel
         const userRole = userData.user.role || userData.user.roles?.[0];
         if (userRole === "admin") {
@@ -132,7 +208,7 @@ export default function EmailPasswordLoginForm({ onSwitchToOtp }: EmailPasswordL
   };
 
   return (
-    <form className="space-y-6" onSubmit={step === "enter" ? sendOtp : verifyOtp}>
+    <form className="space-y-6" onSubmit={usePassword ? loginWithPassword : (step === "enter" ? sendOtp : verifyOtp)}>
       <div className="space-y-3">
         <label className="block text-sm font-medium text-slate-600" htmlFor="email">
           Enter your email address
@@ -144,12 +220,47 @@ export default function EmailPasswordLoginForm({ onSwitchToOtp }: EmailPasswordL
           placeholder="e.g. user@example.com"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
-          disabled={step === "verify"}
+          disabled={step === "verify" && !usePassword}
           required
         />
       </div>
 
-      {step === "verify" && (
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          id="usePassword"
+          checked={usePassword}
+          onChange={(e) => {
+            setUsePassword(e.target.checked);
+            setStep("enter");
+            setCode("");
+            setPassword("");
+            setError(null);
+            setStatus(null);
+          }}
+          className="h-4 w-4 rounded border-slate-300 text-[#2f4bff] focus:ring-2 focus:ring-[#2f4bff]"
+        />
+        <label htmlFor="usePassword" className="text-sm font-medium text-slate-600 cursor-pointer">
+          Login with password
+        </label>
+      </div>
+
+      {usePassword ? (
+        <div className="space-y-3">
+          <label className="block text-sm font-medium text-slate-600" htmlFor="password">
+            Enter your password
+          </label>
+          <input
+            className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2f4bff]"
+            id="password"
+            type="password"
+            placeholder="Enter your password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            required
+          />
+        </div>
+      ) : step === "verify" && (
         <div className="space-y-3">
           <label className="block text-sm font-medium text-slate-600" htmlFor="otp">
             Enter OTP
@@ -171,10 +282,10 @@ export default function EmailPasswordLoginForm({ onSwitchToOtp }: EmailPasswordL
         type="submit"
         disabled={loading}
       >
-        {loading ? "Please wait..." : step === "enter" ? "Send OTP" : "Verify OTP"}
+        {loading ? "Please wait..." : usePassword ? "Login" : (step === "enter" ? "Send OTP" : "Verify OTP")}
       </button>
 
-      {step === "verify" && (
+      {!usePassword && step === "verify" && (
         <div className="space-y-3 text-center text-sm font-semibold text-slate-600">
           <span className="block text-xs font-medium uppercase tracking-[0.3em] text-slate-400">
             or
@@ -195,7 +306,7 @@ export default function EmailPasswordLoginForm({ onSwitchToOtp }: EmailPasswordL
         </div>
       )}
 
-      {onSwitchToOtp && step === "enter" && (
+      {onSwitchToOtp && step === "enter" && !usePassword && (
         <div className="space-y-3 text-center text-sm font-semibold text-slate-600">
           <span className="block text-xs font-medium uppercase tracking-[0.3em] text-slate-400">
             or

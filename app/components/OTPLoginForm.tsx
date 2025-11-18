@@ -21,11 +21,14 @@ type ApiResponse = {
 
 interface OTPLoginFormProps {
   onSwitchToEmail?: () => void;
+  onLoginSuccess?: (token: string, user: any) => void;
 }
 
-export default function OTPLoginForm({ onSwitchToEmail }: OTPLoginFormProps) {
+export default function OTPLoginForm({ onSwitchToEmail, onLoginSuccess }: OTPLoginFormProps) {
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [usePassword, setUsePassword] = useState(false);
   const [step, setStep] = useState<Step>("enter");
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -131,6 +134,12 @@ export default function OTPLoginForm({ onSwitchToEmail }: OTPLoginFormProps) {
       if (userData.token && userData.user) {
         localStorage.setItem("authToken", userData.token);
         localStorage.setItem("user", JSON.stringify(userData.user));
+
+        // If onLoginSuccess callback is provided, use it instead of redirecting
+        if (onLoginSuccess) {
+          onLoginSuccess(userData.token, userData.user);
+          return;
+        }
 
         // Check if user is admin - admin should use admin panel
         const userRole = userData.user.role || userData.user.roles?.[0];

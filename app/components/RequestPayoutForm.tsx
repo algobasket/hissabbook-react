@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { getAuthToken } from "../utils/auth";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
@@ -53,11 +54,18 @@ export default function RequestPayoutForm() {
     setStatus({ type: "loading" });
 
     try {
+      const token = getAuthToken();
+      if (!token) {
+        setStatus({ type: "error", message: "Not authenticated. Please log in again." });
+        return;
+      }
+
       const proof = await fileToBase64(file);
 
       const response = await fetch(`${API_BASE}/api/payout-requests`, {
         method: "POST",
         headers: {
+          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -69,7 +77,8 @@ export default function RequestPayoutForm() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to submit payout request");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to submit payout request");
       }
 
       setAmount("");
