@@ -461,7 +461,7 @@ export default function TeamPage() {
         bookMemberIds: Array.from(bookMemberIds),
         totalUsers: allUsers.length,
         staffUsersCount: staffUsers.length,
-        staffUsers: staffUsers.map(u => ({ 
+        staffUsers: staffUsers.map((u: any) => ({ 
           id: u.id, 
           email: u.email, 
           name: [u.firstName || u.first_name, u.lastName || u.last_name].filter(Boolean).join(" "),
@@ -477,7 +477,7 @@ export default function TeamPage() {
         memberIds: Array.from(memberIds),
         currentMembersCount: members.length,
         availableCount: available.length,
-        availableUsers: available.map(u => ({ id: u.id, email: u.email, name: [u.firstName || u.first_name, u.lastName || u.last_name].filter(Boolean).join(" ") }))
+        availableUsers: available.map((u: any) => ({ id: u.id, email: u.email, name: [u.firstName || u.first_name, u.lastName || u.last_name].filter(Boolean).join(" ") }))
       });
       
       // If no available staff (all are already team members), show all staff anyway

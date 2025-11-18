@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { getAuthToken, isAuthenticated, setAuth } from "../utils/auth";
 
@@ -16,7 +16,7 @@ interface InviteData {
   expiresAt: string;
 }
 
-export default function InvitePage() {
+function InvitePageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [inviteData, setInviteData] = useState<InviteData | null>(null);
@@ -723,5 +723,22 @@ export default function InvitePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function InvitePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#2357FF] mx-auto"></div>
+            <p className="mt-4 text-gray-600 font-medium">Loading...</p>
+          </div>
+        </div>
+      }
+    >
+      <InvitePageContent />
+    </Suspense>
   );
 }

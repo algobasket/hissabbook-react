@@ -628,8 +628,8 @@ export default function BookMembersSettingsPage() {
                         console.log("Selected role ID:", selectedRoleId);
                         
                         if (selectedRole && selectedRole.permissions && selectedRole.permissions.length > 0) {
-                          return selectedRole.permissions.map((permission) => (
-                            <div key={permission.id || permission.name} className="flex items-start gap-3">
+                          return selectedRole.permissions.map((permission, index) => (
+                            <div key={permission.name || `permission-${index}`} className="flex items-start gap-3">
                               <svg
                                 className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-600"
                                 fill="none"
