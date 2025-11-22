@@ -54,17 +54,50 @@ export default function CashbooksPage() {
   const [selectedTargetBusiness, setSelectedTargetBusiness] = useState<string>("");
 
   const [selectedBusinessId, setSelectedBusinessId] = useState<string | null>(null);
+  const [selectedBusinessName, setSelectedBusinessName] = useState<string | null>(null);
 
   // Load selected business ID from localStorage on mount
   useEffect(() => {
     const businessId = localStorage.getItem("selectedBusinessId");
     setSelectedBusinessId(businessId);
+    fetchBusinessName(businessId);
   }, []);
+
+  const fetchBusinessName = async (businessId: string | null) => {
+    if (!businessId) {
+      setSelectedBusinessName(null);
+      return;
+    }
+
+    try {
+      const token = getAuthToken();
+      if (!token) return;
+
+      const response = await fetch(`${API_BASE}/api/businesses`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const business = data.businesses?.find((b: any) => b.id === businessId);
+        if (business) {
+          setSelectedBusinessName(business.name);
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching business name:", err);
+    }
+  };
 
   // Listen for business change events
   useEffect(() => {
     const handleBusinessChange = (event: CustomEvent) => {
-      setSelectedBusinessId(event.detail.businessId);
+      const businessId = event.detail.businessId;
+      setSelectedBusinessId(businessId);
+      fetchBusinessName(businessId);
     };
 
     window.addEventListener('businessChanged', handleBusinessChange as EventListener);
@@ -365,6 +398,13 @@ export default function CashbooksPage() {
         <div className="flex gap-6">
           {/* Main Content */}
           <div className="flex-1 space-y-6">
+            {/* Business Name */}
+            {selectedBusinessName && (
+              <div className="mb-2">
+                <h2 className="text-xl font-semibold text-[#1f2937]">{selectedBusinessName}</h2>
+              </div>
+            )}
+
             {/* Search and Sort */}
             <div className="flex items-center gap-4">
               <div className="relative flex-1">

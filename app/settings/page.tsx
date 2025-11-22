@@ -47,6 +47,7 @@ const REGISTRATION_TYPES = ["Sole Proprietorship", "Partnership", "LLP", "Privat
 
 export default function SettingsPage() {
   const router = useRouter();
+  const [activeSection, setActiveSection] = useState<"business-profile" | "settings">("business-profile");
   const [activeTab, setActiveTab] = useState<"basics" | "business-info" | "gst-info" | "communication">("basics");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -230,6 +231,44 @@ export default function SettingsPage() {
     }
   };
 
+  const handleLeaveBusiness = async () => {
+    if (!confirm("Are you sure you want to leave this business? You will lose access to all business data.")) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError(null);
+      setSuccess(null);
+
+      const token = getAuthToken();
+      if (!token) {
+        setError("Not authenticated");
+        return;
+      }
+
+      const selectedBusinessId = localStorage.getItem("selectedBusinessId");
+      if (!selectedBusinessId) {
+        setError("No business selected");
+        return;
+      }
+
+      // TODO: Implement leave business API call
+      // For now, just show a message
+      setError("Leave business functionality is not yet implemented");
+      
+      // After implementation, you would:
+      // 1. Call API to remove user from business
+      // 2. Clear selectedBusinessId from localStorage
+      // 3. Redirect to businesses list or dashboard
+    } catch (err) {
+      console.error("Error leaving business:", err);
+      setError(err instanceof Error ? err.message : "Failed to leave business");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const profileStrength = calculateProfileStrength();
   const strengthLabel =
     profileStrength.percentage >= 80 ? "Strong" : profileStrength.percentage >= 50 ? "Medium" : "Weak";
@@ -255,27 +294,48 @@ export default function SettingsPage() {
   return (
     <ProtectedRoute>
       <AppShell activePath="/settings">
-        <div className="space-y-6">
-          {/* Header Section */}
-          <div className="space-y-4">
+        <div className="flex gap-6">
+          {/* Left Sidebar */}
+          <div className="w-64 flex-shrink-0 space-y-6">
             <div>
-              <h1 className="text-2xl font-semibold text-[#1f2937]">Business Profile</h1>
-              <p className="mt-1 text-sm text-slate-500">Edit business details</p>
+              <h2 className="text-lg font-semibold text-[#1f2937] mb-2">Business Profile</h2>
+              <button
+                onClick={() => setActiveSection("business-profile")}
+                className={`w-full text-left px-3 py-2 rounded-lg transition-all duration-200 ${
+                  activeSection === "business-profile"
+                    ? "bg-blue-50 text-[#2f4bff] shadow-sm"
+                    : "text-slate-500 hover:bg-slate-50 hover:text-[#1f2937] hover:shadow-sm"
+                }`}
+              >
+                <p className="text-sm font-medium">Edit business details</p>
+              </button>
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-[#1f2937]">Settings</h2>
-              <p className="mt-1 text-sm text-slate-500">Leave Business</p>
+              <h2 className="text-lg font-semibold text-[#1f2937] mb-2">Settings</h2>
+              <button
+                onClick={() => setActiveSection("settings")}
+                className={`w-full text-left px-3 py-2 rounded-lg transition-all duration-200 ${
+                  activeSection === "settings"
+                    ? "bg-blue-50 text-[#2f4bff] shadow-sm"
+                    : "text-slate-500 hover:bg-slate-50 hover:text-[#1f2937] hover:shadow-sm"
+                }`}
+              >
+                <p className="text-sm font-medium">Leave Business</p>
+              </button>
             </div>
           </div>
 
-          {/* Success/Error Messages */}
-          {success && (
-            <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-600">{success}</div>
-          )}
-          {error && <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">{error}</div>}
+          {/* Right Content Area */}
+          <div className="flex-1 space-y-6">
+            {/* Success/Error Messages */}
+            {success && (
+              <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-600">{success}</div>
+            )}
+            {error && <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">{error}</div>}
 
-          {/* Business Profile Card */}
-          <div className="rounded-3xl border border-white/70 bg-white p-8 shadow-md">
+            {/* Business Profile Section */}
+            {activeSection === "business-profile" && (
+              <div className="rounded-3xl border border-white/70 bg-white p-8 shadow-md">
             {/* Business Header */}
             <div className="mb-6 flex items-start justify-between">
               <div className="flex items-center gap-4">
@@ -544,6 +604,32 @@ export default function SettingsPage() {
                 >
                   {saving ? "Saving..." : "Save Changes"}
                 </button>
+              </div>
+            )}
+            </div>
+            )}
+
+            {/* Settings Section - Leave Business */}
+            {activeSection === "settings" && (
+              <div className="rounded-3xl border border-white/70 bg-white p-8 shadow-md">
+                <div>
+                  <h2 className="text-xl font-semibold text-[#1f2937] mb-2">Leave Business</h2>
+                  <p className="text-sm text-slate-500 mb-6">You will lose access to this business</p>
+                  <button
+                    onClick={handleLeaveBusiness}
+                    disabled={saving}
+                    className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:opacity-50"
+                  >
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M13 7l5 5m0 0l-5 5m5-5H6"
+                      />
+                    </svg>
+                    Leave business
+                  </button>
+                </div>
               </div>
             )}
           </div>

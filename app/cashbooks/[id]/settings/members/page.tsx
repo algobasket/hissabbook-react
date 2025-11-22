@@ -30,6 +30,7 @@ interface Book {
   description: string | null;
   currencyCode: string;
   ownerId: string;
+  businessId: string | null;
 }
 
 export default function BookMembersSettingsPage() {
@@ -50,6 +51,11 @@ export default function BookMembersSettingsPage() {
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
   const [roles, setRoles] = useState<Array<{ id: string; name: string; description: string | null; permissions: Array<{ name: string; description: string }> }>>([]);
   const [loadingPermissions, setLoadingPermissions] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [invitePhone, setInvitePhone] = useState("");
+  const [inviteMethod, setInviteMethod] = useState<"existing" | "email" | "phone">("existing");
+  const [inviteStep, setInviteStep] = useState<"select" | "role">("select");
+  const [inviteRole, setInviteRole] = useState<"Staff" | "Partner">("Staff");
   const currentUser = getUser();
 
   useEffect(() => {
@@ -123,7 +129,75 @@ export default function BookMembersSettingsPage() {
         throw new Error("Not authenticated");
       }
 
-      // Fetch all available users
+      // If book has no business, show empty list (users can still invite via email/phone)
+      if (!book?.businessId) {
+        setAvailableUsers([]);
+        return;
+      }
+
+      // Get business info to find owner
+      const businessResponse = await fetch(`${API_BASE}/api/businesses`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      let businessOwnerId: string | null = null;
+      if (businessResponse.ok) {
+        const businessData = await businessResponse.json();
+        const business = businessData.businesses?.find((b: any) => b.id === book.businessId);
+        if (business) {
+          businessOwnerId = business.ownerId;
+        }
+      }
+
+      // Fetch all books for this business
+      const booksResponse = await fetch(`${API_BASE}/api/books?business_id=${book.businessId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      const booksData = booksResponse.ok ? await booksResponse.json() : { books: [] };
+      const books = booksData.books || [];
+
+      // Collect book owner IDs (Partners) and book member IDs (Staff)
+      const bookOwnerIds = new Set<string>();
+      const bookMemberIds = new Set<string>();
+
+      // Get all users from books in this business
+      for (const bookItem of books) {
+        // Track book owners (Partners) - users who own books in this business
+        if (bookItem.ownerId && bookItem.ownerId !== businessOwnerId) {
+          bookOwnerIds.add(bookItem.ownerId);
+        }
+
+        try {
+          const bookUsersResponse = await fetch(`${API_BASE}/api/books/${bookItem.id}/users`, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          });
+
+          if (bookUsersResponse.ok) {
+            const bookUsersData = await bookUsersResponse.json();
+            (bookUsersData.users || []).forEach((user: any) => {
+              // Only add if they're not a book owner (isOwner flag) and not the business owner
+              // These are Staff members (book members via book_users, not owners)
+              if (!user.isOwner && user.id !== businessOwnerId && !bookOwnerIds.has(user.id)) {
+                bookMemberIds.add(user.id);
+              }
+            });
+          }
+        } catch (err) {
+          console.error(`Error fetching users for book ${bookItem.id}:`, err);
+        }
+      }
+
+      // Fetch user details for staff members only
       const allUsersResponse = await fetch(`${API_BASE}/api/users/all`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -138,13 +212,16 @@ export default function BookMembersSettingsPage() {
       const allUsersData = await allUsersResponse.json();
       const allUsers = allUsersData.users || [];
 
-      // Filter out users who are already members (including owner)
+      // Filter to only staff members (book members from this business, not owners)
+      const staffUsers = allUsers.filter((user: any) => bookMemberIds.has(user.id));
+
+      // Filter out users who are already members of this book (including owner)
       const memberIds = new Set(members.map((m) => m.id));
-      // Also exclude the owner if they're not already in the members list
       if (book?.ownerId) {
         memberIds.add(book.ownerId);
       }
-      const available = allUsers.filter((u: any) => !memberIds.has(u.id));
+      const available = staffUsers.filter((u: any) => !memberIds.has(u.id));
+      
       setAvailableUsers(available);
     } catch (err) {
       console.error("Error fetching users:", err);
@@ -156,7 +233,34 @@ export default function BookMembersSettingsPage() {
 
   const handleAddMemberClick = () => {
     setShowAddMemberModal(true);
+    setInviteStep("select");
+    setInviteMethod("existing");
+    setInviteEmail("");
+    setInvitePhone("");
+    setInviteRole("Staff");
+    setSelectedUserId("");
+    setError(null);
     fetchUsersForAdd();
+  };
+
+  const handleInviteMethodChange = (method: "existing" | "email" | "phone") => {
+    setInviteMethod(method);
+    setSelectedUserId("");
+    setInviteEmail("");
+    setInvitePhone("");
+  };
+
+  const handleInviteNext = () => {
+    if (
+      (inviteMethod === "existing" && !selectedUserId) ||
+      (inviteMethod === "email" && !inviteEmail.trim()) ||
+      (inviteMethod === "phone" && !invitePhone.trim())
+    ) {
+      setError("Please fill in all required fields");
+      return;
+    }
+    setInviteStep("role");
+    setError(null);
   };
 
   const fetchRolePermissions = async () => {
@@ -207,8 +311,6 @@ export default function BookMembersSettingsPage() {
   };
 
   const handleAddMemberSubmit = async () => {
-    if (!selectedUserId) return;
-
     try {
       setAddingMember(true);
       setError(null);
@@ -217,23 +319,121 @@ export default function BookMembersSettingsPage() {
         throw new Error("Not authenticated");
       }
 
-      const response = await fetch(`${API_BASE}/api/books/${bookId}/users`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          userId: selectedUserId,
-        }),
-      });
+      let response;
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || "Failed to add member");
+      if (inviteMethod === "existing" && selectedUserId) {
+        // Add existing user to book (always as Staff for cashbook members)
+        response = await fetch(`${API_BASE}/api/books/${bookId}/users`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId: selectedUserId,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || "Failed to add member");
+        }
+      } else if (inviteMethod === "email" || inviteMethod === "phone") {
+        // For Staff: add to cashbook directly if possible, or send invite
+        // For Partner: send invite to business (requires business)
+        if (inviteRole === "Partner") {
+          // Partner requires a business
+          if (!book?.businessId) {
+            throw new Error("This book is not associated with a business. Partners need business access. Please assign the book to a business first.");
+          }
+
+          // Send invite to business as Partner
+          const inviteData: any = {
+            role: "Partner",
+            businessId: book.businessId,
+          };
+
+          if (inviteMethod === "email") {
+            inviteData.email = inviteEmail.trim();
+          } else if (inviteMethod === "phone") {
+            inviteData.phone = invitePhone.trim();
+          }
+
+          response = await fetch(`${API_BASE}/api/businesses/${book.businessId}/invites`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(inviteData),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || "Failed to send invite");
+          }
+
+          const data = await response.json();
+          console.log("Invite sent:", data);
+          
+          if (inviteMethod === "email") {
+            alert(`Invite email sent successfully to ${inviteEmail}. They will receive an email with a link to join the business as Partner.`);
+          } else {
+            alert(`Invite created for ${invitePhone}. Note: SMS sending is not yet implemented, but the invite has been created.`);
+          }
+        } else {
+          // Staff: can be added to cashbook directly or invited
+          if (book?.businessId) {
+            // Send invite via business invite API
+            const inviteData: any = {
+              role: "Staff",
+              businessId: book.businessId,
+            };
+
+            if (inviteMethod === "email") {
+              inviteData.email = inviteEmail.trim();
+            } else if (inviteMethod === "phone") {
+              inviteData.phone = invitePhone.trim();
+            }
+
+            response = await fetch(`${API_BASE}/api/businesses/${book.businessId}/invites`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(inviteData),
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(errorData.message || "Failed to send invite");
+            }
+
+            const data = await response.json();
+            console.log("Invite sent:", data);
+            
+            if (inviteMethod === "email") {
+              alert(`Invite email sent successfully to ${inviteEmail}. They will receive an email with a link to join as Staff. Once they join, they will be added to this cashbook.`);
+            } else {
+              alert(`Invite created for ${invitePhone}. Note: SMS sending is not yet implemented, but the invite has been created.`);
+            }
+          } else {
+            // No business - can't send invite, but can add existing users
+            throw new Error("To invite new users as Staff, this book needs to be associated with a business. You can still add existing users from the dropdown.");
+          }
+        }
+      } else {
+        throw new Error("Please select a user or provide email/phone");
       }
 
+      // Close modal and refresh
       setShowAddMemberModal(false);
+      setInviteStep("select");
+      setInviteMethod("existing");
+      setInviteEmail("");
+      setInvitePhone("");
+      setInviteRole("Staff");
       setSelectedUserId("");
       setAvailableUsers([]);
       fetchMembers(); // Refresh members list
@@ -288,18 +488,16 @@ export default function BookMembersSettingsPage() {
     if ((member as any).isOwner || member.id === book?.ownerId) {
       return "Owner";
     }
-    // Check if member is current user
-    if (member.id === currentUser?.id) {
-      return "Partner";
-    }
-    // Default role (can be enhanced with role management later)
-    return "Partner";
+    // All other members are Staff
+    return "Staff";
   };
 
   const getRoleColor = (role: string): string => {
     switch (role.toLowerCase()) {
       case "owner":
         return "bg-emerald-100 text-emerald-700 border-emerald-200";
+      case "staff":
+        return "bg-blue-100 text-blue-700 border-blue-200";
       case "partner":
         return "bg-orange-100 text-orange-700 border-orange-200";
       case "admin":
@@ -488,85 +686,313 @@ export default function BookMembersSettingsPage() {
         {/* Add Member Modal */}
         {showAddMemberModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
-              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-                <h2 className="text-lg font-semibold text-[#1f2937]">Add Member to {book?.name}</h2>
-                <button
-                  onClick={() => {
-                    setShowAddMemberModal(false);
-                    setSelectedUserId("");
-                    setAvailableUsers([]);
-                  }}
-                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              <div className="p-6">
-                {loadingUsers ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-[#2f4bff]"></div>
+            <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
+              {inviteStep === "select" ? (
+                <>
+                  {/* Step 1: Select Method */}
+                  <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                    <h2 className="text-lg font-semibold text-[#1f2937]">Add Member to {book?.name}</h2>
+                    <button
+                      onClick={() => {
+                        setShowAddMemberModal(false);
+                        setInviteStep("select");
+                        setInviteMethod("existing");
+                        setSelectedUserId("");
+                        setAvailableUsers([]);
+                        setInviteEmail("");
+                        setInvitePhone("");
+                        setInviteRole("Staff");
+                      }}
+                      className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    >
+                      <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
                   </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div>
-                      <label htmlFor="select-user" className="block text-sm font-medium text-slate-700 mb-2">
-                        Select User to Add <span className="text-rose-500">*</span>
-                      </label>
-                      {availableUsers.length === 0 ? (
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                          {members.length > 0
-                            ? "All available users are already members of this book"
-                            : "No users available to add"}
+                  <div className="p-6">
+                    {loadingUsers ? (
+                      <div className="flex items-center justify-center py-8">
+                        <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-[#2f4bff]"></div>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Mobile Number Input */}
+                        <div className="mb-4">
+                          <label className="mb-2 block text-sm font-medium text-slate-700">
+                            Mobile number
+                          </label>
+                          <div className="flex gap-2">
+                            <select className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-[#1f2937] focus:border-[#2f4bff] focus:outline-none focus:ring-2 focus:ring-[#2f4bff]/20">
+                              <option value="+91">🇮🇳 +91</option>
+                            </select>
+                            <input
+                              type="tel"
+                              placeholder="e.g. 8772321230"
+                              value={invitePhone}
+                              onChange={(e) => {
+                                setInvitePhone(e.target.value);
+                                if (e.target.value.trim()) {
+                                  setInviteMethod("phone");
+                                  setSelectedUserId("");
+                                  setInviteEmail("");
+                                } else {
+                                  setInviteMethod("existing");
+                                }
+                              }}
+                              className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-[#1f2937] placeholder-slate-400 focus:border-[#2f4bff] focus:outline-none focus:ring-2 focus:ring-[#2f4bff]/20"
+                            />
+                          </div>
                         </div>
-                      ) : (
-                        <select
-                          id="select-user"
-                          value={selectedUserId}
-                          onChange={(e) => setSelectedUserId(e.target.value)}
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-[#2f4bff] focus:outline-none focus:ring-2 focus:ring-[#2f4bff]/20"
+
+                        {/* Separator */}
+                        <div className="relative my-4">
+                          <div className="absolute inset-0 flex items-center">
+                            <div className="w-full border-t border-slate-200"></div>
+                          </div>
+                          <div className="relative flex justify-center text-xs uppercase">
+                            <span className="bg-white px-2 text-slate-500">Or</span>
+                          </div>
+                        </div>
+
+                        {/* Add via Email Button */}
+                        <div className="mb-6">
+                          <button
+                            onClick={() => handleInviteMethodChange("email")}
+                            className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                          >
+                            Add via Email
+                          </button>
+                        </div>
+
+                        {/* Email Input (shown when email method selected) */}
+                        {inviteMethod === "email" && (
+                          <div className="mb-6">
+                            <label className="mb-2 block text-sm font-medium text-slate-700">
+                              Email address
+                            </label>
+                            <input
+                              type="email"
+                              placeholder="e.g. user@example.com"
+                              value={inviteEmail}
+                              onChange={(e) => {
+                                setInviteEmail(e.target.value);
+                                if (e.target.value.trim()) {
+                                  setInviteMethod("email");
+                                  setSelectedUserId("");
+                                  setInvitePhone("");
+                                } else {
+                                  setInviteMethod("existing");
+                                }
+                              }}
+                              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-[#1f2937] placeholder-slate-400 focus:border-[#2f4bff] focus:outline-none focus:ring-2 focus:ring-[#2f4bff]/20"
+                            />
+                          </div>
+                        )}
+
+                        {/* Existing Users Dropdown (shown when existing method or not email/phone) */}
+                        {inviteMethod === "existing" && (
+                          <div className="mb-6">
+                            <label className="mb-2 block text-sm font-medium text-slate-700">
+                              Select User
+                            </label>
+                            {availableUsers.length === 0 ? (
+                              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                                {book?.businessId 
+                                  ? "All staff members from this business are already added to this cashbook. Use email or phone to invite someone new."
+                                  : "No staff members found. Use email or phone to invite someone."}
+                              </div>
+                            ) : (
+                              <select
+                                value={selectedUserId}
+                                onChange={(e) => {
+                                  setSelectedUserId(e.target.value);
+                                  setInviteEmail("");
+                                  setInvitePhone("");
+                                  setInviteMethod("existing");
+                                }}
+                                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-[#1f2937] focus:border-[#2f4bff] focus:outline-none focus:ring-2 focus:ring-[#2f4bff]/20"
+                              >
+                                <option value="">Choose a user...</option>
+                                {availableUsers.map((user) => {
+                                  const name = [user.firstName || user.first_name, user.lastName || user.last_name]
+                                    .filter(Boolean)
+                                    .join(" ")
+                                    .trim() || user.email?.split("@")[0] || "Unknown";
+                                  const display = user.phone
+                                    ? `${name} (${user.email}) - ${user.phone}`
+                                    : `${name} (${user.email})`;
+                                  return (
+                                    <option key={user.id} value={user.id}>
+                                      {display}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            )}
+                          </div>
+                        )}
+
+                        {error && (
+                          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+                            {error}
+                          </div>
+                        )}
+
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => {
+                              setShowAddMemberModal(false);
+                              setInviteStep("select");
+                              setInviteMethod("existing");
+                              setSelectedUserId("");
+                              setAvailableUsers([]);
+                              setInviteEmail("");
+                              setInvitePhone("");
+                              setInviteRole("Staff");
+                            }}
+                            className="flex-1 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                            disabled={addingMember}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleInviteNext}
+                            disabled={
+                              addingMember ||
+                              (inviteMethod === "existing" && !selectedUserId) ||
+                              (inviteMethod === "email" && !inviteEmail.trim()) ||
+                              (inviteMethod === "phone" && !invitePhone.trim())
+                            }
+                            className="flex-1 rounded-lg bg-[#2f4bff] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2f4bff]/90 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Step 2: Choose Role & Confirm */}
+                  <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                    <button
+                      onClick={() => setInviteStep("select")}
+                      className="text-slate-400 hover:text-slate-600"
+                    >
+                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                    <h2 className="text-lg font-semibold text-[#1f2937]">Choose Role</h2>
+                    <button
+                      onClick={() => {
+                        setShowAddMemberModal(false);
+                        setInviteStep("select");
+                        setInviteMethod("existing");
+                        setSelectedUserId("");
+                        setAvailableUsers([]);
+                        setInviteEmail("");
+                        setInvitePhone("");
+                        setInviteRole("Staff");
+                      }}
+                      className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    >
+                      <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="p-6">
+                    {/* Role Selection */}
+                    <div className="mb-6">
+                      <label className="mb-3 block text-sm font-medium text-slate-700">
+                        Select Role
+                      </label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setInviteRole("Staff")}
+                          className={`rounded-lg border-2 px-4 py-3 text-sm font-medium transition ${
+                            inviteRole === "Staff"
+                              ? "border-[#2f4bff] bg-blue-50 text-[#2f4bff]"
+                              : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                          }`}
                         >
-                          <option value="">Select a user...</option>
-                          {availableUsers.map((user) => {
-                            const displayName =
-                              user.name ||
-                              (user.firstName || user.lastName
-                                ? `${user.firstName || ""} ${user.lastName || ""}`.trim()
-                                : user.email?.split("@")[0] || "Unknown");
-                            return (
-                              <option key={user.id} value={user.id}>
-                                {displayName} ({user.email})
-                              </option>
-                            );
-                          })}
-                        </select>
-                      )}
+                          <div className="text-base font-semibold mb-1">Staff</div>
+                          <div className="text-xs text-slate-500">
+                            {inviteMethod === "existing" ? "Add to cashbook" : "Invite to cashbook"}
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInviteRole("Partner")}
+                          className={`rounded-lg border-2 px-4 py-3 text-sm font-medium transition ${
+                            inviteRole === "Partner"
+                              ? "border-[#2f4bff] bg-blue-50 text-[#2f4bff]"
+                              : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                          }`}
+                        >
+                          <div className="text-base font-semibold mb-1">Partner</div>
+                          <div className="text-xs text-slate-500">
+                            Invite to business
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Info Box */}
+                    <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-sm font-medium text-slate-700 mb-2">
+                        {inviteRole === "Staff" ? "Adding as Staff" : "Inviting as Partner"}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {inviteMethod === "existing" && selectedUserId
+                          ? inviteRole === "Staff"
+                            ? `Adding existing user to ${book?.name} as Staff member`
+                            : `This will invite the user to join the business as Partner`
+                          : inviteMethod === "email"
+                          ? inviteRole === "Staff"
+                            ? `Sending invite to ${inviteEmail} to join as Staff and be added to this cashbook`
+                            : `Sending invite to ${inviteEmail} to join the business as Partner`
+                          : inviteMethod === "phone"
+                          ? inviteRole === "Staff"
+                            ? `Sending invite to ${invitePhone} to join as Staff and be added to this cashbook`
+                            : `Sending invite to ${invitePhone} to join the business as Partner`
+                          : ""}
+                      </p>
+                    </div>
+
+                    {error && (
+                      <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+                        {error}
+                      </div>
+                    )}
+
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setInviteStep("select")}
+                        className="flex-1 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                        disabled={addingMember}
+                      >
+                        Back
+                      </button>
+                      <button
+                        onClick={handleAddMemberSubmit}
+                        disabled={addingMember}
+                        className="flex-1 rounded-lg bg-[#2f4bff] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2f4bff]/90 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {addingMember 
+                          ? "Processing..." 
+                          : inviteMethod === "existing" 
+                            ? "Add Member" 
+                            : "Send Invite"}
+                      </button>
                     </div>
                   </div>
-                )}
-              </div>
-              <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
-                <button
-                  onClick={() => {
-                    setShowAddMemberModal(false);
-                    setSelectedUserId("");
-                    setAvailableUsers([]);
-                  }}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                  disabled={addingMember}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleAddMemberSubmit}
-                  disabled={addingMember || !selectedUserId || availableUsers.length === 0}
-                  className="rounded-xl bg-[#2f4bff] px-6 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#2f4bff]/90 disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {addingMember ? "Adding..." : "Add Member"}
-                </button>
-              </div>
+                </>
+              )}
             </div>
           </div>
         )}

@@ -25,9 +25,30 @@ interface TeamMember {
   isPartner?: boolean;
 }
 
+interface Invite {
+  id: string;
+  businessId: string;
+  email: string | null;
+  phone: string | null;
+  role: string;
+  inviteToken: string;
+  status: string;
+  invitedBy: string;
+  inviterEmail: string | null;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+  acceptedAt: string | null;
+  acceptedBy: string | null;
+  acceptedUserEmail?: string | null;
+  userInviteStatus?: string | null;
+}
+
 export default function TeamPage() {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [filteredMembers, setFilteredMembers] = useState<TeamMember[]>([]);
+  const [invites, setInvites] = useState<Invite[]>([]);
+  const [filteredInvites, setFilteredInvites] = useState<Invite[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("All");
@@ -45,16 +66,28 @@ export default function TeamPage() {
   const [inviteStep, setInviteStep] = useState<"select" | "role">("select");
   const [invitedUserEmail, setInvitedUserEmail] = useState("");
   const [invitedUserPhone, setInvitedUserPhone] = useState("");
+  const [isExistingUser, setIsExistingUser] = useState(false);
+  const [checkingUser, setCheckingUser] = useState(false);
+  const [selectedCashbookId, setSelectedCashbookId] = useState<string | null>(null);
+  const [cashbooksForInvite, setCashbooksForInvite] = useState<Array<{ id: string; name: string }>>([]);
+  const [loadingCashbooks, setLoadingCashbooks] = useState(false);
+  const [selectedBusinessForPartner, setSelectedBusinessForPartner] = useState<string | null>(null);
+  const [businesses, setBusinesses] = useState<Array<{ id: string; name: string }>>([]);
   const [roles, setRoles] = useState<Array<{ id: string; name: string; description: string | null; permissions: Array<{ name: string; description: string }> }>>([]);
   const [loadingPermissions, setLoadingPermissions] = useState(false);
   const [selectedBusinessId, setSelectedBusinessId] = useState<string | null>(null);
   const [businessInfo, setBusinessInfo] = useState<{ name: string; ownerId: string } | null>(null);
-  const currentUser = getUser();
+  const [currentUser, setCurrentUser] = useState<ReturnType<typeof getUser> | null>(null);
+  const [mounted, setMounted] = useState(false);
   const addMemberModalRef = useRef<HTMLDivElement>(null);
   const rolesModalRef = useRef<HTMLDivElement>(null);
 
-  // Load selected business ID from localStorage on mount
+  // Set mounted state and load user data on client side only
   useEffect(() => {
+    setMounted(true);
+    setCurrentUser(getUser());
+    
+    // Load selected business ID from localStorage on mount
     const businessId = localStorage.getItem("selectedBusinessId");
     setSelectedBusinessId(businessId);
     if (businessId) {
@@ -82,8 +115,10 @@ export default function TeamPage() {
     if (selectedBusinessId) {
       fetchBusinessInfo(selectedBusinessId);
       fetchMembers(selectedBusinessId);
+      fetchInvites(selectedBusinessId);
     } else {
       setMembers([]);
+      setInvites([]);
       setBusinessInfo(null);
       setLoading(false);
     }
@@ -91,7 +126,48 @@ export default function TeamPage() {
 
   useEffect(() => {
     filterMembers();
-  }, [members, activeTab, searchQuery]);
+    filterInvites();
+  }, [members, invites, activeTab, searchQuery]);
+
+  const fetchInvites = async (businessId: string) => {
+    try {
+      const token = getAuthToken();
+      if (!token) return;
+
+      const response = await fetch(`${API_BASE}/api/businesses/${businessId}/invites`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setInvites(data.invites || []);
+      } else {
+        console.error("Failed to fetch invites");
+      }
+    } catch (err) {
+      console.error("Error fetching invites:", err);
+    }
+  };
+
+  const filterInvites = () => {
+    let filtered = [...invites];
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (invite) =>
+          invite.email?.toLowerCase().includes(query) ||
+          invite.phone?.toLowerCase().includes(query) ||
+          invite.inviterEmail?.toLowerCase().includes(query)
+      );
+    }
+
+    setFilteredInvites(filtered);
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -111,6 +187,28 @@ export default function TeamPage() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [showAddMemberModal, showRolesModal]);
+
+  const fetchBusinesses = async () => {
+    try {
+      const token = getAuthToken();
+      if (!token) return;
+
+      const response = await fetch(`${API_BASE}/api/businesses`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setBusinesses(data.businesses || []);
+      }
+    } catch (err) {
+      console.error("Error fetching businesses:", err);
+      setBusinesses([]);
+    }
+  };
 
   const fetchBusinessInfo = async (businessId: string) => {
     try {
@@ -318,7 +416,7 @@ export default function TeamPage() {
     } else if (activeTab === "Staff") {
       filtered = filtered.filter(m => m.role === "Staff");
     } else if (activeTab === "Pending Invites") {
-      // For now, pending invites is empty - can be extended later
+      // Pending invites are handled separately in the render
       filtered = [];
     }
     // If activeTab === "All", show all members (no filter)
@@ -366,6 +464,43 @@ export default function TeamPage() {
     if (role === "Partner") return "bg-orange-100 text-orange-700";
     if (role === "Staff") return "bg-blue-100 text-blue-700";
     return "bg-slate-100 text-slate-700";
+  };
+
+  const fetchCashbooksForInvite = async (businessId: string) => {
+    try {
+      setLoadingCashbooks(true);
+      const token = getAuthToken();
+      if (!token) {
+        return;
+      }
+
+      const response = await fetch(`${API_BASE}/api/books?business_id=${businessId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch cashbooks");
+      }
+
+      const data = await response.json();
+      setCashbooksForInvite(data.books || []);
+      
+      // Auto-select first cashbook if available
+      if (data.books && data.books.length > 0) {
+        setSelectedCashbookId(data.books[0].id);
+      } else {
+        setSelectedCashbookId(null);
+      }
+    } catch (err) {
+      console.error("Error fetching cashbooks:", err);
+      setCashbooksForInvite([]);
+      setSelectedCashbookId(null);
+    } finally {
+      setLoadingCashbooks(false);
+    }
   };
 
   const fetchUsersForAdd = async () => {
@@ -493,7 +628,7 @@ export default function TeamPage() {
     }
   };
 
-  const handleAddMemberClick = () => {
+  const handleAddMemberClick = async () => {
     if (!selectedBusinessId) {
       alert("Please select a business first");
       return;
@@ -505,8 +640,13 @@ export default function TeamPage() {
     setInvitePhone("");
     setInviteRole("Staff");
     setSelectedUserId("");
+    setSelectedCashbookId(null);
+    setSelectedBusinessForPartner(null);
     setError(null);
-    fetchUsersForAdd();
+    await fetchBusinesses(); // Fetch businesses for Partner selection
+    await fetchUsersForAdd();
+    // Fetch cashbooks for Staff role
+    await fetchCashbooksForInvite(selectedBusinessId);
   };
 
   const handleInviteMethodChange = (method: "existing" | "email" | "phone") => {
@@ -514,9 +654,50 @@ export default function TeamPage() {
     setSelectedUserId("");
     setInviteEmail("");
     setInvitePhone("");
+    setIsExistingUser(false);
+    setCheckingUser(false);
   };
 
-  const handleInviteNext = () => {
+  const checkUserExists = async (email: string | null, phone: string | null) => {
+    if (!email && !phone) {
+      setIsExistingUser(false);
+      return;
+    }
+
+    try {
+      setCheckingUser(true);
+      const token = getAuthToken();
+      if (!token) {
+        setIsExistingUser(false);
+        return;
+      }
+
+      const params = new URLSearchParams();
+      if (email) params.append("email", email);
+      if (phone) params.append("phone", phone);
+
+      const response = await fetch(`${API_BASE}/api/users/check?${params.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setIsExistingUser(data.exists || false);
+      } else {
+        setIsExistingUser(false);
+      }
+    } catch (err) {
+      console.error("Error checking user existence:", err);
+      setIsExistingUser(false);
+    } finally {
+      setCheckingUser(false);
+    }
+  };
+
+  const handleInviteNext = async () => {
     if (inviteMethod === "existing" && !selectedUserId) {
       setError("Please select a user");
       return;
@@ -536,11 +717,16 @@ export default function TeamPage() {
       if (user) {
         setInvitedUserEmail(user.email);
         setInvitedUserPhone(user.phone || "");
+        setIsExistingUser(true);
       }
     } else if (inviteMethod === "email") {
       setInvitedUserEmail(inviteEmail.trim());
+      // Check if user exists
+      await checkUserExists(inviteEmail.trim(), null);
     } else if (inviteMethod === "phone") {
       setInvitedUserPhone(invitePhone.trim());
+      // Check if user exists
+      await checkUserExists(null, invitePhone.trim());
     }
 
     setInviteStep("role");
@@ -559,9 +745,18 @@ export default function TeamPage() {
       let response;
       
       if (inviteMethod === "existing" && selectedUserId) {
+        // Validate selections based on role
+        if (inviteRole === "Staff" && !selectedCashbookId) {
+          throw new Error("Please select a cashbook for Staff role");
+        }
+        if (inviteRole === "Partner" && !selectedBusinessForPartner) {
+          throw new Error("Please select a business for Partner role");
+        }
+
         // Add existing user to business team
+        const targetBusinessId = inviteRole === "Partner" ? selectedBusinessForPartner : selectedBusinessId;
         try {
-          response = await fetch(`${API_BASE}/api/businesses/${selectedBusinessId}/members`, {
+          response = await fetch(`${API_BASE}/api/businesses/${targetBusinessId}/members`, {
             method: "POST",
             headers: {
               Authorization: `Bearer ${token}`,
@@ -581,6 +776,24 @@ export default function TeamPage() {
           const data = await response.json();
           console.log("Added existing user to business team:", data);
           
+          // If Staff, also add to selected cashbook
+          if (inviteRole === "Staff" && selectedCashbookId) {
+            const addToBookResponse = await fetch(`${API_BASE}/api/books/${selectedCashbookId}/users`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                userId: selectedUserId,
+              }),
+            });
+
+            if (!addToBookResponse.ok) {
+              console.warn("User added to business but failed to add to cashbook");
+            }
+          }
+          
           // Show success message
           const selectedUser = availableUsers.find(u => u.id === selectedUserId);
           const userName = selectedUser 
@@ -592,10 +805,19 @@ export default function TeamPage() {
           throw err instanceof Error ? err : new Error("Failed to add existing user");
         }
       } else if (inviteMethod === "email" || inviteMethod === "phone") {
+        // Validate selections based on role
+        if (inviteRole === "Staff" && !selectedCashbookId) {
+          throw new Error("Please select a cashbook for Staff role");
+        }
+        if (inviteRole === "Partner" && !selectedBusinessForPartner) {
+          throw new Error("Please select a business for Partner role");
+        }
+
         // Send invite email/link to new user (not a CashBook user)
+        const targetBusinessId = inviteRole === "Partner" ? selectedBusinessForPartner : selectedBusinessId;
         const inviteData: any = {
           role: inviteRole,
-          businessId: selectedBusinessId,
+          businessId: targetBusinessId,
         };
 
         if (inviteMethod === "email") {
@@ -604,9 +826,14 @@ export default function TeamPage() {
           inviteData.phone = invitePhone.trim();
         }
 
+        // For Staff, include cashbook ID in invite data
+        if (inviteRole === "Staff" && selectedCashbookId) {
+          inviteData.cashbookId = selectedCashbookId;
+        }
+
         // Send invite email with invite link
         try {
-          response = await fetch(`${API_BASE}/api/businesses/${selectedBusinessId}/invites`, {
+          response = await fetch(`${API_BASE}/api/businesses/${targetBusinessId}/invites`, {
             method: "POST",
             headers: {
               Authorization: `Bearer ${token}`,
@@ -648,10 +875,11 @@ export default function TeamPage() {
       setInvitedUserEmail("");
       setInvitedUserPhone("");
       
-      // Refresh team members list
+      // Refresh team members list and invites
       if (selectedBusinessId) {
         setTimeout(() => {
           fetchMembers(selectedBusinessId);
+          fetchInvites(selectedBusinessId);
         }, 1000);
       }
     } catch (err) {
@@ -698,6 +926,19 @@ export default function TeamPage() {
     acc[role].push(member);
     return acc;
   }, {} as Record<string, TeamMember[]>);
+
+  // Prevent hydration mismatch by not rendering until mounted
+  if (!mounted) {
+    return (
+      <ProtectedRoute>
+        <AppShell activePath="/team">
+          <div className="flex items-center justify-center py-12">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-[#2f4bff]"></div>
+          </div>
+        </AppShell>
+      </ProtectedRoute>
+    );
+  }
 
   return (
     <ProtectedRoute>
@@ -748,7 +989,7 @@ export default function TeamPage() {
               ))}
             </div>
 
-            {/* Team Members List */}
+            {/* Team Members List / Invites List */}
             {!selectedBusinessId ? (
               <div className="rounded-xl border border-slate-200 bg-white p-8 text-center">
                 <p className="text-sm text-slate-500">Please select a business to view team members</p>
@@ -761,6 +1002,97 @@ export default function TeamPage() {
               <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">
                 {error}
               </div>
+            ) : activeTab === "Pending Invites" ? (
+              // Show Invites
+              filteredInvites.length === 0 ? (
+                <div className="rounded-xl border border-slate-200 bg-white p-8 text-center">
+                  <p className="text-sm text-slate-500">No pending invites found for this business</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {filteredInvites
+                    .filter((invite) => invite.status === "pending")
+                    .map((invite) => (
+                      <div
+                        key={invite.id}
+                        className="flex items-center gap-4 rounded-xl border border-amber-200 bg-amber-50/50 p-4 transition hover:shadow-md"
+                      >
+                        {/* Avatar */}
+                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+                          <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                            />
+                          </svg>
+                        </div>
+
+                        {/* Invite Info */}
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-semibold text-[#1f2937]">
+                              {invite.email || invite.phone || "Unknown"}
+                            </h4>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-xs font-medium ${getRoleBadgeColor(invite.role)}`}
+                            >
+                              {invite.role}
+                            </span>
+                            {invite.status === "pending" && !invite.acceptedUserEmail ? (
+                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-600">
+                                Pending
+                              </span>
+                            ) : invite.acceptedUserEmail ? (
+                              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-600">
+                                Accepted
+                              </span>
+                            ) : (
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                                {invite.status === "accepted" ? "Accepted" : invite.status}
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-1 space-y-0.5 text-xs text-slate-500">
+                            {invite.email && <div>{invite.email}</div>}
+                            {invite.phone && (
+                              <div>{invite.phone.startsWith("+") ? invite.phone : `+91 ${invite.phone}`}</div>
+                            )}
+                            {invite.inviterEmail && (
+                              <div className="text-slate-400">Invited by: {invite.inviterEmail}</div>
+                            )}
+                            {invite.acceptedUserEmail && (
+                              <div className="text-emerald-600 font-medium">
+                                ✓ Accepted by: {invite.acceptedUserEmail}
+                              </div>
+                            )}
+                            {invite.acceptedAt && (
+                              <div className="text-slate-400">
+                                Accepted: {new Date(invite.acceptedAt).toLocaleDateString()}
+                              </div>
+                            )}
+                            {invite.expiresAt && !invite.acceptedUserEmail && (
+                              <div className="text-slate-400">
+                                Expires: {new Date(invite.expiresAt).toLocaleDateString()}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Arrow Icon */}
+                        <svg
+                          className="h-5 w-5 text-slate-400"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+                    ))}
+                </div>
+              )
             ) : filteredMembers.length === 0 ? (
               <div className="rounded-xl border border-slate-200 bg-white p-8 text-center">
                 <p className="text-sm text-slate-500">No team members found for this business</p>
@@ -897,13 +1229,19 @@ export default function TeamPage() {
                             placeholder="e.g. 8772321230"
                             value={invitePhone}
                             onChange={(e) => {
+                              const value = e.target.value.trim();
                               setInvitePhone(e.target.value);
-                              if (e.target.value.trim()) {
+                              if (value) {
                                 setInviteMethod("phone");
                                 setSelectedUserId("");
                                 setInviteEmail("");
+                                // Debounce: check user existence after a short delay
+                                setTimeout(() => {
+                                  checkUserExists(null, value);
+                                }, 500);
                               } else {
                                 setInviteMethod("existing");
+                                setIsExistingUser(false);
                               }
                             }}
                             className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-[#1f2937] placeholder-slate-400 focus:border-[#2f4bff] focus:outline-none focus:ring-2 focus:ring-[#2f4bff]/20"
@@ -942,17 +1280,26 @@ export default function TeamPage() {
                             placeholder="e.g. user@example.com"
                             value={inviteEmail}
                             onChange={(e) => {
+                              const value = e.target.value.trim();
                               setInviteEmail(e.target.value);
-                              if (e.target.value.trim()) {
+                              if (value) {
                                 setInviteMethod("email");
                                 setSelectedUserId("");
                                 setInvitePhone("");
+                                // Debounce: check user existence after a short delay
+                                setTimeout(() => {
+                                  checkUserExists(value, null);
+                                }, 500);
                               } else {
                                 setInviteMethod("existing");
+                                setIsExistingUser(false);
                               }
                             }}
                             className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-[#1f2937] placeholder-slate-400 focus:border-[#2f4bff] focus:outline-none focus:ring-2 focus:ring-[#2f4bff]/20"
                           />
+                          {checkingUser && (
+                            <p className="mt-1 text-xs text-slate-500">Checking if user exists...</p>
+                          )}
                         </div>
                       )}
 
@@ -1076,7 +1423,10 @@ export default function TeamPage() {
                       ) : (
                         <>
                           <p className="mb-3 text-sm text-slate-600">
-                            {invitedUserEmail || invitedUserPhone} is a new user. Send invite to {invitedUserEmail || invitedUserPhone} to join this business.
+                            {isExistingUser 
+                              ? `${invitedUserEmail || invitedUserPhone} is an existing CashBook user. Send invite to ${invitedUserEmail || invitedUserPhone} to join this business.`
+                              : `${invitedUserEmail || invitedUserPhone} is a new user. Send invite to ${invitedUserEmail || invitedUserPhone} to join this business.`
+                            }
                           </p>
                           <div className="flex items-center gap-3">
                             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-500 text-white">
@@ -1086,8 +1436,12 @@ export default function TeamPage() {
                               <p className="text-sm font-medium text-[#1f2937]">{invitedUserEmail || invitedUserPhone}</p>
                               {invitedUserEmail && <p className="text-xs text-slate-500">{invitedUserEmail}</p>}
                             </div>
-                            <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600">
-                              Not a CashBook User
+                            <span className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                              isExistingUser 
+                                ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                                : "border-slate-300 bg-white text-slate-600"
+                            }`}>
+                              {isExistingUser ? "CashBook User" : "Not a CashBook User"}
                             </span>
                           </div>
                         </>
@@ -1100,7 +1454,14 @@ export default function TeamPage() {
                     <label className="mb-2 block text-sm font-medium text-slate-700">Choose Role</label>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => setInviteRole("Staff")}
+                        onClick={async () => {
+                          setInviteRole("Staff");
+                          setSelectedBusinessForPartner(null);
+                          // Fetch cashbooks for the selected business when Staff is selected
+                          if (selectedBusinessId) {
+                            await fetchCashbooksForInvite(selectedBusinessId);
+                          }
+                        }}
                         className={`flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition ${
                           inviteRole === "Staff"
                             ? "border-blue-500 bg-blue-50 text-blue-700"
@@ -1110,7 +1471,17 @@ export default function TeamPage() {
                         Staff
                       </button>
                       <button
-                        onClick={() => setInviteRole("Partner")}
+                        onClick={async () => {
+                          setInviteRole("Partner");
+                          setSelectedCashbookId(null);
+                          setCashbooksForInvite([]);
+                          // Fetch businesses if not already loaded
+                          if (businesses.length === 0) {
+                            await fetchBusinesses();
+                          }
+                          // Auto-select the current business for partner
+                          setSelectedBusinessForPartner(selectedBusinessId);
+                        }}
                         className={`flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition ${
                           inviteRole === "Partner"
                             ? "border-orange-500 bg-orange-50 text-orange-700"
@@ -1121,6 +1492,62 @@ export default function TeamPage() {
                       </button>
                     </div>
                   </div>
+
+                  {/* Cashbook Selection (for Staff) */}
+                  {inviteRole === "Staff" && selectedBusinessId && (
+                    <div className="mb-4">
+                      <label className="mb-2 block text-sm font-medium text-slate-700">
+                        Select Cashbook <span className="text-red-500">*</span>
+                      </label>
+                      {loadingCashbooks ? (
+                        <div className="flex items-center gap-2 text-sm text-slate-500">
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-[#2f4bff]"></div>
+                          Loading cashbooks...
+                        </div>
+                      ) : (
+                        <select
+                          value={selectedCashbookId || ""}
+                          onChange={(e) => setSelectedCashbookId(e.target.value)}
+                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-[#1f2937] focus:border-[#2f4bff] focus:outline-none focus:ring-2 focus:ring-[#2f4bff]/20"
+                          required
+                        >
+                          <option value="">Select a cashbook...</option>
+                          {cashbooksForInvite.map((cashbook) => (
+                            <option key={cashbook.id} value={cashbook.id}>
+                              {cashbook.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      {!loadingCashbooks && cashbooksForInvite.length === 0 && (
+                        <p className="mt-1 text-xs text-amber-600">
+                          No cashbooks found for this business. Please create a cashbook first.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Business Selection (for Partner) */}
+                  {inviteRole === "Partner" && (
+                    <div className="mb-4">
+                      <label className="mb-2 block text-sm font-medium text-slate-700">
+                        Select Business <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={selectedBusinessForPartner || ""}
+                        onChange={(e) => setSelectedBusinessForPartner(e.target.value)}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-[#1f2937] focus:border-[#2f4bff] focus:outline-none focus:ring-2 focus:ring-[#2f4bff]/20"
+                        required
+                      >
+                        <option value="">Select a business...</option>
+                        {businesses.map((business) => (
+                          <option key={business.id} value={business.id}>
+                            {business.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   {/* Permissions */}
                   <div className="mb-4">
@@ -1248,7 +1675,11 @@ export default function TeamPage() {
                     </button>
                     <button
                       onClick={handleInviteSubmit}
-                      disabled={addingMember}
+                      disabled={
+                        addingMember ||
+                        (inviteRole === "Staff" && !selectedCashbookId) ||
+                        (inviteRole === "Partner" && !selectedBusinessForPartner)
+                      }
                       className="flex items-center justify-center gap-2 flex-1 rounded-lg bg-[#2f4bff] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2f4bff]/90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

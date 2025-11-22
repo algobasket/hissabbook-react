@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import AppShell from "../components/AppShell";
 import ProtectedRoute from "../components/ProtectedRoute";
 import { getAuthToken, getUser } from "../utils/auth";
+import { getPaymentCurrency, getCurrencyName } from "../utils/currency";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ||
@@ -35,6 +36,8 @@ function AddNewBookContent() {
     ownerUserId: "",
     businessId: "",
   });
+  const [paymentCurrency, setPaymentCurrency] = useState<string>("INR");
+  const [loadingCurrency, setLoadingCurrency] = useState(true);
 
   useEffect(() => {
     // Get current user from localStorage
@@ -72,7 +75,29 @@ function AddNewBookContent() {
         name: decodeURIComponent(nameParam),
       }));
     }
+
+    // Fetch payment currency setting
+    fetchPaymentCurrency();
   }, [searchParams]);
+
+  const fetchPaymentCurrency = async () => {
+    try {
+      setLoadingCurrency(true);
+      const currency = await getPaymentCurrency();
+      setPaymentCurrency(currency);
+      // Set the currency in form data
+      setFormData((prev) => ({
+        ...prev,
+        currencyCode: currency,
+      }));
+    } catch (error) {
+      console.error("Error fetching payment currency:", error);
+      // Default to INR on error
+      setPaymentCurrency("INR");
+    } finally {
+      setLoadingCurrency(false);
+    }
+  };
 
   const fetchCurrentUser = async () => {
     try {
@@ -236,20 +261,26 @@ function AddNewBookContent() {
                   <label htmlFor="currencyCode" className="block text-sm font-medium text-[#1f2937]">
                     Currency <span className="text-rose-500">*</span>
                   </label>
-                  <select
-                    id="currencyCode"
-                    name="currencyCode"
-                    value={formData.currencyCode}
-                    onChange={handleChange}
-                    required
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-[#1f2937] focus:border-[#2f4bff] focus:outline-none focus:ring-2 focus:ring-[#2f4bff]/20"
-                    disabled={loading}
-                  >
-                    <option value="INR">INR (Indian Rupee)</option>
-                    <option value="USD">USD (US Dollar)</option>
-                    <option value="EUR">EUR (Euro)</option>
-                    <option value="GBP">GBP (British Pound)</option>
-                  </select>
+                  {loadingCurrency ? (
+                    <div className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                      Loading currency...
+                    </div>
+                  ) : (
+                    <select
+                      id="currencyCode"
+                      name="currencyCode"
+                      value={formData.currencyCode}
+                      onChange={handleChange}
+                      required
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-[#1f2937] cursor-not-allowed"
+                      disabled={true}
+                    >
+                      <option value={paymentCurrency}>{getCurrencyName(paymentCurrency)}</option>
+                    </select>
+                  )}
+                  <p className="text-xs text-slate-500">
+                    Currency is set by admin in Payment Settings
+                  </p>
                 </div>
 
                 <div className="space-y-2">

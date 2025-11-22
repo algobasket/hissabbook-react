@@ -7,9 +7,13 @@ import ProtectedRoute from "../components/ProtectedRoute";
 import { getAuthToken } from "../utils/auth";
 
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
+  process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ||
+  (typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "http://localhost:5000"
+    : "/backend");
 
 interface AccountDetails {
+  email: string | null;
   name: string | null;
   firstName: string | null;
   lastName: string | null;
@@ -28,6 +32,7 @@ export default function AccountInfoPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [accountDetails, setAccountDetails] = useState<AccountDetails>({
+    email: null,
     name: null,
     firstName: null,
     lastName: null,
@@ -39,6 +44,7 @@ export default function AccountInfoPage() {
     roles: null,
   });
   const [formData, setFormData] = useState<AccountDetails>({
+    email: null,
     name: null,
     firstName: null,
     lastName: null,
@@ -51,6 +57,13 @@ export default function AccountInfoPage() {
   });
   const [qrCodePreview, setQrCodePreview] = useState<string | null>(null);
   const [showQrModal, setShowQrModal] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [changingPassword, setChangingPassword] = useState(false);
 
   // Fetch account details on mount
   useEffect(() => {
@@ -75,13 +88,16 @@ export default function AccountInfoPage() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to fetch account details");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to fetch account details");
       }
 
       const data = await response.json();
       setAccountDetails(data);
       setFormData(data);
+      setError(null); // Clear any previous errors
     } catch (err) {
+      console.error("Error fetching account details:", err);
       setError(err instanceof Error ? err.message : "Failed to load account details");
     } finally {
       setLoading(false);
@@ -182,6 +198,63 @@ export default function AccountInfoPage() {
       ...prev,
       [field]: value || null,
     }));
+  };
+
+  const handleChangePassword = async () => {
+    if (!passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
+      setError("Please fill in all password fields");
+      return;
+    }
+
+    if (passwordData.newPassword.length < 8) {
+      setError("New password must be at least 8 characters long");
+      return;
+    }
+
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      setError("New password and confirm password do not match");
+      return;
+    }
+
+    try {
+      setChangingPassword(true);
+      setError(null);
+      setSuccess(null);
+
+      const token = getAuthToken();
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
+
+      const response = await fetch(`${API_BASE}/api/auth/change-password`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          currentPassword: passwordData.currentPassword,
+          newPassword: passwordData.newPassword,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to change password");
+      }
+
+      setSuccess("Password changed successfully!");
+      setPasswordData({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
+      setShowChangePassword(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to change password");
+    } finally {
+      setChangingPassword(false);
+    }
   };
 
   // Format phone number for display
@@ -286,6 +359,15 @@ export default function AccountInfoPage() {
           <div className="mt-6 grid gap-5 text-sm text-[#1f2937]">
             <div>
               <label className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">
+                Email Address
+              </label>
+              <p className="mt-2 rounded-xl border border-slate-200 bg-[#f8faff] px-4 py-3">
+                {accountDetails.email || "Not set"}
+              </p>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">
                 Name
               </label>
               {isEditing ? (
@@ -367,6 +449,117 @@ export default function AccountInfoPage() {
               <p className="mt-2 rounded-xl border border-slate-200 bg-[#f8faff] px-4 py-3 capitalize">
                 {accountDetails.role ? accountDetails.role.replace(/_/g, " ") : "Not set"}
               </p>
+            </div>
+
+            {/* Change Password Section */}
+            <div className="border-t border-slate-200 pt-5">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">
+                    Password
+                  </label>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Change your account password
+                  </p>
+                </div>
+                {!showChangePassword && (
+                  <button
+                    onClick={() => {
+                      setShowChangePassword(true);
+                      setError(null);
+                      setSuccess(null);
+                      setPasswordData({
+                        currentPassword: "",
+                        newPassword: "",
+                        confirmPassword: "",
+                      });
+                    }}
+                    className="rounded-xl border border-[#2f4bff] bg-white px-4 py-2 text-sm font-semibold text-[#2f4bff] transition hover:bg-[#2f4bff]/10"
+                  >
+                    Change Password
+                  </button>
+                )}
+              </div>
+
+              {showChangePassword && (
+                <div className="mt-4 space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-slate-400 mb-2">
+                      Current Password
+                    </label>
+                    <input
+                      type="password"
+                      value={passwordData.currentPassword}
+                      onChange={(e) =>
+                        setPasswordData((prev) => ({
+                          ...prev,
+                          currentPassword: e.target.value,
+                        }))
+                      }
+                      placeholder="Enter current password"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#2f4bff]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-slate-400 mb-2">
+                      New Password
+                    </label>
+                    <input
+                      type="password"
+                      value={passwordData.newPassword}
+                      onChange={(e) =>
+                        setPasswordData((prev) => ({
+                          ...prev,
+                          newPassword: e.target.value,
+                        }))
+                      }
+                      placeholder="Enter new password (min 8 characters)"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#2f4bff]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-slate-400 mb-2">
+                      Confirm New Password
+                    </label>
+                    <input
+                      type="password"
+                      value={passwordData.confirmPassword}
+                      onChange={(e) =>
+                        setPasswordData((prev) => ({
+                          ...prev,
+                          confirmPassword: e.target.value,
+                        }))
+                      }
+                      placeholder="Confirm new password"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#2f4bff]"
+                    />
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => {
+                        setShowChangePassword(false);
+                        setPasswordData({
+                          currentPassword: "",
+                          newPassword: "",
+                          confirmPassword: "",
+                        });
+                        setError(null);
+                      }}
+                      disabled={changingPassword}
+                      className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleChangePassword}
+                      disabled={changingPassword}
+                      className="rounded-xl bg-[#2f4bff] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2f4bff]/90 disabled:opacity-50"
+                    >
+                      {changingPassword ? "Changing..." : "Change Password"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-6">
