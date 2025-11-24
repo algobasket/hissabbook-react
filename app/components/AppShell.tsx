@@ -90,9 +90,9 @@ const allNavSections: NavSection[] = [
     title: "HissabBook UPI",
     items: [
       { label: "Dashboard", href: "/dashboard", icon: "dashboard" },
+      { label: "Request Payout", href: "/request-payout", icon: "payout" },
       { label: "Wallets", href: "/wallets", icon: "wallet" },
       { label: "Approvals", href: "/approvals", icon: "approvals" },
-      { label: "Request Payout", href: "/request-payout", icon: "payout" },
     ],
   },
   {
@@ -302,7 +302,11 @@ export default function AppShell({ activePath, children }: AppShellProps) {
             <h1 className="text-lg font-semibold text-[#111827]">
               Welcome {formatRoleName(userRole)}
             </h1>
-            <p className="text-sm text-slate-500">Manage all your businesses, cashbook and staff all in one place</p>
+            <p className="text-sm text-slate-500">
+              {(userRole === "staff" || userRole?.toLowerCase() === "staff") 
+                ? "Manage payout request, cashbook and staff all in one place"
+                : "Manage all your businesses, cashbook and staff all in one place"}
+            </p>
           </div>
           <div className="flex items-center justify-center flex-1">
             {(userRole === "managers" || userRole === "manager") && <BusinessSelector />}
@@ -435,7 +439,7 @@ export default function AppShell({ activePath, children }: AppShellProps) {
                   {/* Copyright and Version */}
                   <div className="px-4 py-2 bg-slate-50">
                     <div className="text-xs text-slate-500 text-center">
-                      © HissabBook • Version 1.0.0
+                      &copy; HissabBook • Version 1.0.0
                     </div>
                   </div>
                 </div>
@@ -451,5 +455,3 @@ export default function AppShell({ activePath, children }: AppShellProps) {
     </div>
   );
 }
-
-  

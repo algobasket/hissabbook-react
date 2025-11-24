@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppShell from "../components/AppShell";
 import ProtectedRoute from "../components/ProtectedRoute";
-import { getAuthToken } from "../utils/auth";
+import { getAuthToken, isManager } from "../utils/auth";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ||
@@ -56,7 +56,6 @@ export default function ApprovalsPage() {
       const response = await fetch(`${API_BASE}/api/payout-requests${statusParam}`, {
         headers: {
           Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
         },
       });
 
@@ -77,6 +76,7 @@ export default function ApprovalsPage() {
 
   useEffect(() => {
     if (!mounted) return;
+    
     fetchPayoutRequests();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, selectedStatus]);
@@ -115,6 +115,43 @@ export default function ApprovalsPage() {
     } catch (err: any) {
       console.error("Error updating payout request status:", err);
       setError(err.message || "Failed to update request status");
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (processingId) return;
+    if (!confirm("Are you sure you want to delete this payout request? This action cannot be undone.")) {
+      return;
+    }
+
+    setProcessingId(id);
+    setError(null);
+    try {
+      const token = getAuthToken();
+      if (!token) {
+        setError("Not authenticated");
+        return;
+      }
+
+      const response = await fetch(`${API_BASE}/api/payout-requests/${id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to delete payout request");
+      }
+
+      // Refresh the list
+      await fetchPayoutRequests();
+    } catch (err: any) {
+      console.error("Error deleting payout request:", err);
+      setError(err.message || "Failed to delete payout request");
     } finally {
       setProcessingId(null);
     }
@@ -269,26 +306,33 @@ export default function ApprovalsPage() {
                               {formatDate(request.updatedAt)}
                             </td>
                             <td className="px-4 py-4">
-                              {request.status === "pending" ? (
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={() => handleStatusUpdate(request.id, "accepted")}
-                                    disabled={processingId === request.id}
-                                    className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                  >
-                                    {processingId === request.id ? "Processing..." : "Accept"}
-                                  </button>
-                                  <button
-                                    onClick={() => handleStatusUpdate(request.id, "rejected")}
-                                    disabled={processingId === request.id}
-                                    className="rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                  >
-                                    {processingId === request.id ? "Processing..." : "Reject"}
-                                  </button>
-                                </div>
-                              ) : (
-                                <span className="text-xs text-slate-400">No actions</span>
-                              )}
+                              <div className="flex items-center gap-2">
+                                {isManager() && request.status === "pending" && (
+                                  <>
+                                    <button
+                                      onClick={() => handleStatusUpdate(request.id, "accepted")}
+                                      disabled={processingId === request.id}
+                                      className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                      {processingId === request.id ? "Processing..." : "Approve"}
+                                    </button>
+                                    <button
+                                      onClick={() => handleStatusUpdate(request.id, "rejected")}
+                                      disabled={processingId === request.id}
+                                      className="rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                      {processingId === request.id ? "Processing..." : "Reject"}
+                                    </button>
+                                  </>
+                                )}
+                                <button
+                                  onClick={() => handleDelete(request.id)}
+                                  disabled={processingId === request.id}
+                                  className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                  {processingId === request.id ? "Processing..." : "Delete"}
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );

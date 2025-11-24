@@ -12,19 +12,19 @@ const API_BASE =
 
 const statCards = [
   {
-    title: "Wallet balance",
+    title: "Wallet UPI Balance",
     value: "₹2,45,600",
     meta: "+12.4% vs last month",
     gradient: "from-[#2357FF] via-[#4f6dff] to-[#8aa8ff]",
   },
   {
-    title: "Pending approvals",
+    title: "Pending Approvals",
     value: "08 requests",
     meta: "2 high priority",
     gradient: "from-[#00B8A9] via-[#3cd4c9] to-[#8bf1e6]",
   },
   {
-    title: "Scheduled payouts",
+    title: "Total Payout Amount",
     value: "₹58,200",
     meta: "Clears in 2 days",
     gradient: "from-[#8B5CF6] via-[#a686ff] to-[#d5c4ff]",
