@@ -187,9 +187,16 @@ function AddNewBookContent() {
         throw new Error(errorData.message || "Failed to create book");
       }
 
+      const data = await response.json();
+      const bookId = data.book?.id;
+
       setSuccess(true);
       setTimeout(() => {
-        router.push("/cashbooks");
+        if (bookId) {
+          router.push(`/cashbooks/${bookId}/settings/members`);
+        } else {
+          router.push("/cashbooks");
+        }
       }, 1500);
     } catch (err) {
       console.error("Error creating book:", err);
@@ -218,7 +225,7 @@ function AddNewBookContent() {
 
             {success && (
               <div className="mb-6 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-600">
-                Book created successfully! Redirecting to cashbooks...
+                Book created successfully! Redirecting to members page...
               </div>
             )}
 

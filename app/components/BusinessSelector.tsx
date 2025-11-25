@@ -19,6 +19,7 @@ interface Business {
   ownerName: string;
   masterWalletUpi: string | null;
   masterWalletQrCode: string | null;
+  masterWalletBalance: number;
   status: string;
   createdAt: string;
   updatedAt: string;

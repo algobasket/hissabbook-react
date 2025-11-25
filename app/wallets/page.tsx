@@ -42,7 +42,7 @@ export default function WalletsPage() {
         method: "GET",
         headers: {
           Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
+          "Content-Type": "application/json", 
         },
       });
 
@@ -110,7 +110,7 @@ export default function WalletsPage() {
 
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
-                <span className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">Wallet balance</span>
+                <span className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">Wallet UPI Balance</span>
                 <p className="mt-2 text-2xl font-semibold text-[#2f4bff]">₹2,45,600</p>
                 <p className="text-xs uppercase tracking-[0.3em] text-slate-400">{walletType} • updated 5 min ago</p>
               </div>

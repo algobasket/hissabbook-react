@@ -56,6 +56,18 @@ export default function BookMembersSettingsPage() {
   const [inviteMethod, setInviteMethod] = useState<"existing" | "email" | "phone">("existing");
   const [inviteStep, setInviteStep] = useState<"select" | "role">("select");
   const [inviteRole, setInviteRole] = useState<"Staff" | "Partner">("Staff");
+  const [renameModalOpen, setRenameModalOpen] = useState(false);
+  const [duplicateModalOpen, setDuplicateModalOpen] = useState(false);
+  const [renameName, setRenameName] = useState("");
+  const [duplicateName, setDuplicateName] = useState("");
+  const [duplicateOptions, setDuplicateOptions] = useState({
+    duplicateMembers: true,
+    duplicateCategories: true,
+    duplicatePaymentModes: true,
+    duplicateParties: true,
+    duplicateCustomFields: true,
+  });
+  const [saving, setSaving] = useState(false);
   const currentUser = getUser();
 
   useEffect(() => {
@@ -522,6 +534,124 @@ export default function BookMembersSettingsPage() {
     return colors[index];
   };
 
+  const handleRenameSubmit = async () => {
+    if (!book || !renameName.trim()) return;
+
+    try {
+      setSaving(true);
+      setError(null);
+      const token = getAuthToken();
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
+
+      const response = await fetch(`${API_BASE}/api/books/${bookId}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: renameName.trim(),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to rename book");
+      }
+
+      setRenameModalOpen(false);
+      setRenameName("");
+      fetchBook(); // Refresh book data
+    } catch (err) {
+      console.error("Error renaming book:", err);
+      setError(err instanceof Error ? err.message : "Failed to rename book");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDuplicateSubmit = async () => {
+    if (!book || !duplicateName.trim()) return;
+
+    try {
+      setSaving(true);
+      setError(null);
+      const token = getAuthToken();
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
+
+      const response = await fetch(`${API_BASE}/api/books/${bookId}/duplicate`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          newName: duplicateName.trim(),
+          ...duplicateOptions,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to duplicate book");
+      }
+
+      const data = await response.json();
+      setDuplicateModalOpen(false);
+      setDuplicateName("");
+      
+      // Redirect to the new duplicated book's members page
+      if (data.book?.id) {
+        router.push(`/cashbooks/${data.book.id}/settings/members`);
+      } else {
+        router.push("/cashbooks");
+      }
+    } catch (err) {
+      console.error("Error duplicating book:", err);
+      setError(err instanceof Error ? err.message : "Failed to duplicate book");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteBook = async () => {
+    if (!book) return;
+
+    try {
+      setSaving(true);
+      setError(null);
+      const token = getAuthToken();
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
+
+      const response = await fetch(`${API_BASE}/api/books/${bookId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to delete book");
+      }
+
+      // Redirect to cashbooks list after deletion
+      router.push("/cashbooks");
+    } catch (err) {
+      console.error("Error deleting book:", err);
+      setError(err instanceof Error ? err.message : "Failed to delete book");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <ProtectedRoute>
       <AppShell activePath="/cashbooks">
@@ -539,14 +669,22 @@ export default function BookMembersSettingsPage() {
             </button>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => router.push(`/cashbooks/${bookId}`)}
+                onClick={() => {
+                  if (book) {
+                    setRenameName(book.name);
+                    setRenameModalOpen(true);
+                  }
+                }}
                 className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 Rename Book
               </button>
               <button
                 onClick={() => {
-                  // Handle duplicate
+                  if (book) {
+                    setDuplicateName(`${book.name} (Copy)`);
+                    setDuplicateModalOpen(true);
+                  }
                 }}
                 className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
@@ -554,7 +692,9 @@ export default function BookMembersSettingsPage() {
               </button>
               <button
                 onClick={() => {
-                  // Handle delete
+                  if (book && window.confirm(`Are you sure you want to delete "${book.name}"? This action cannot be undone.`)) {
+                    handleDeleteBook();
+                  }
                 }}
                 className="rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
               >
@@ -1089,6 +1229,163 @@ export default function BookMembersSettingsPage() {
                   className="rounded-xl bg-[#2f4bff] px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#2f4bff]/90 transition"
                 >
                   Ok, Got it
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Rename Book Modal */}
+        {renameModalOpen && book && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <h2 className="text-lg font-semibold text-[#1f2937]">Rename Book</h2>
+                <button
+                  onClick={() => {
+                    setRenameModalOpen(false);
+                    setRenameName("");
+                  }}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="p-6">
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="rename-name" className="block text-sm font-medium text-slate-700 mb-2">
+                      Book Name <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      id="rename-name"
+                      type="text"
+                      value={renameName}
+                      onChange={(e) => setRenameName(e.target.value)}
+                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-[#2f4bff] focus:outline-none focus:ring-2 focus:ring-[#2f4bff]/20"
+                      placeholder="Enter book name"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+                <button
+                  onClick={() => {
+                    setRenameModalOpen(false);
+                    setRenameName("");
+                  }}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  disabled={saving}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleRenameSubmit}
+                  disabled={saving || !renameName.trim()}
+                  className="rounded-xl bg-[#2f4bff] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#2f4bff]/90 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {saving ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Duplicate Book Modal */}
+        {duplicateModalOpen && book && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <h2 className="text-lg font-semibold text-[#1f2937]">Duplicate {book.name}</h2>
+                <button
+                  onClick={() => {
+                    setDuplicateModalOpen(false);
+                    setDuplicateName("");
+                  }}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="p-6">
+                <div className="mb-4 flex items-start gap-3 rounded-lg bg-blue-50 p-3">
+                  <svg className="h-5 w-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-sm text-blue-800">
+                    Create new book with same settings as {book.name}
+                  </p>
+                </div>
+
+                <div className="space-y-6">
+                  <div>
+                    <label htmlFor="duplicate-name" className="block text-sm font-medium text-slate-700 mb-2">
+                      Enter new book name <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      id="duplicate-name"
+                      type="text"
+                      value={duplicateName}
+                      onChange={(e) => setDuplicateName(e.target.value)}
+                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-[#2f4bff] focus:outline-none focus:ring-2 focus:ring-[#2f4bff]/20"
+                      placeholder="Enter new book name"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div>
+                    <h3 className="mb-3 text-sm font-semibold text-slate-700">Choose settings to duplicate:</h3>
+                    <div className="space-y-2">
+                      {[
+                        { key: 'duplicateMembers', label: 'Members & Roles' },
+                        { key: 'duplicateCategories', label: 'Categories' },
+                        { key: 'duplicatePaymentModes', label: 'Payment Modes' },
+                        { key: 'duplicateParties', label: 'Party' },
+                        { key: 'duplicateCustomFields', label: 'Custom Fields' },
+                      ].map((option) => (
+                        <label
+                          key={option.key}
+                          className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3 hover:bg-slate-50 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={duplicateOptions[option.key as keyof typeof duplicateOptions]}
+                            onChange={(e) =>
+                              setDuplicateOptions((prev) => ({
+                                ...prev,
+                                [option.key]: e.target.checked,
+                              }))
+                            }
+                            className="h-4 w-4 rounded border-slate-300 text-[#2f4bff] focus:ring-2 focus:ring-[#2f4bff]"
+                          />
+                          <span className="text-sm text-slate-700">{option.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+                <button
+                  onClick={() => {
+                    setDuplicateModalOpen(false);
+                    setDuplicateName("");
+                  }}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  disabled={saving}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDuplicateSubmit}
+                  disabled={saving || !duplicateName.trim()}
+                  className="rounded-xl bg-[#2f4bff] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#2f4bff]/90 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {saving ? "Creating..." : "Add New Book"}
                 </button>
               </div>
             </div>

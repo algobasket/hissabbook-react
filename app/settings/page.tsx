@@ -26,6 +26,7 @@ interface BusinessData {
   businessMobile: string;
   businessEmail: string;
   masterWalletUpi: string | null;
+  masterWalletBalance: number;
 }
 
 const BUSINESS_CATEGORIES = [

@@ -23,6 +23,7 @@ interface AccountDetails {
   upiQrCode: string | null;
   role: string | null;
   roles: string[] | null;
+  isEmailVerified?: boolean;
 }
 
 export default function AccountInfoPage() {
@@ -59,11 +60,14 @@ export default function AccountInfoPage() {
   const [showQrModal, setShowQrModal] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [passwordData, setPasswordData] = useState({
-    currentPassword: "",
     newPassword: "",
     confirmPassword: "",
   });
   const [changingPassword, setChangingPassword] = useState(false);
+  const [showChangeEmail, setShowChangeEmail] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [changingEmail, setChangingEmail] = useState(false);
+  const [sendingVerificationEmail, setSendingVerificationEmail] = useState(false);
 
   // Fetch account details on mount
   useEffect(() => {
@@ -200,8 +204,104 @@ export default function AccountInfoPage() {
     }));
   };
 
+  const handleChangeEmail = async () => {
+    if (!newEmail.trim()) {
+      setError("Please enter a new email address");
+      return;
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(newEmail.trim())) {
+      setError("Please enter a valid email address");
+      return;
+    }
+
+    if (newEmail.trim().toLowerCase() === accountDetails.email?.toLowerCase()) {
+      setError("New email must be different from current email");
+      return;
+    }
+
+    try {
+      setChangingEmail(true);
+      setError(null);
+      setSuccess(null);
+
+      const token = getAuthToken();
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
+
+      const response = await fetch(`${API_BASE}/api/auth/change-email`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          newEmail: newEmail.trim().toLowerCase(),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to change email");
+      }
+
+      setSuccess("Email changed successfully! Please log in again with your new email.");
+      setNewEmail("");
+      setShowChangeEmail(false);
+      
+      // Refresh account details to show new email
+      setTimeout(() => {
+        fetchAccountDetails();
+      }, 1000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to change email");
+    } finally {
+      setChangingEmail(false);
+    }
+  };
+
+  const handleSendVerificationEmail = async () => {
+    if (!accountDetails.email) {
+      setError("No email address found");
+      return;
+    }
+
+    try {
+      setSendingVerificationEmail(true);
+      setError(null);
+      setSuccess(null);
+
+      const token = getAuthToken();
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
+
+      const response = await fetch(`${API_BASE}/api/auth/send-verification-email`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to send verification email");
+      }
+
+      setSuccess("Verification email sent! Please check your inbox and click the link to verify your email.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send verification email");
+    } finally {
+      setSendingVerificationEmail(false);
+    }
+  };
+
   const handleChangePassword = async () => {
-    if (!passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
+    if (!passwordData.newPassword || !passwordData.confirmPassword) {
       setError("Please fill in all password fields");
       return;
     }
@@ -233,7 +333,6 @@ export default function AccountInfoPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          currentPassword: passwordData.currentPassword,
           newPassword: passwordData.newPassword,
         }),
       });
@@ -245,7 +344,6 @@ export default function AccountInfoPage() {
 
       setSuccess("Password changed successfully!");
       setPasswordData({
-        currentPassword: "",
         newPassword: "",
         confirmPassword: "",
       });
@@ -358,12 +456,97 @@ export default function AccountInfoPage() {
 
           <div className="mt-6 grid gap-5 text-sm text-[#1f2937]">
             <div>
-              <label className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">
-                Email Address
-              </label>
-              <p className="mt-2 rounded-xl border border-slate-200 bg-[#f8faff] px-4 py-3">
-                {accountDetails.email || "Not set"}
-              </p>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">
+                  Email Address
+                </label>
+                {!showChangeEmail && (
+                  <div className="flex items-center gap-3">
+                    {!accountDetails.isEmailVerified && (
+                      <button
+                        onClick={handleSendVerificationEmail}
+                        disabled={sendingVerificationEmail}
+                        className="text-xs font-semibold text-emerald-600 hover:underline disabled:opacity-50"
+                      >
+                        {sendingVerificationEmail ? "Sending..." : "Verify Email"}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setShowChangeEmail(true);
+                        setNewEmail("");
+                        setError(null);
+                        setSuccess(null);
+                      }}
+                      className="text-xs font-semibold text-[#2f4bff] hover:underline"
+                    >
+                      Change Email
+                    </button>
+                  </div>
+                )}
+              </div>
+              {showChangeEmail ? (
+                <div className="mt-2 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-slate-400 mb-2">
+                      Current Email
+                    </label>
+                    <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+                      <span>{accountDetails.email || "Not set"}</span>
+                      {accountDetails.isEmailVerified && (
+                        <span className="flex items-center text-emerald-600" title="Email verified">
+                          <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-slate-400 mb-2">
+                      New Email Address
+                    </label>
+                    <input
+                      type="email"
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                      placeholder="Enter new email address"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#2f4bff]"
+                    />
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => {
+                        setShowChangeEmail(false);
+                        setNewEmail("");
+                        setError(null);
+                      }}
+                      disabled={changingEmail}
+                      className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleChangeEmail}
+                      disabled={changingEmail || !newEmail.trim()}
+                      className="rounded-xl bg-[#2f4bff] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2f4bff]/90 disabled:opacity-50"
+                    >
+                      {changingEmail ? "Changing..." : "Change Email"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-2 flex items-center gap-2 rounded-xl border border-slate-200 bg-[#f8faff] px-4 py-3">
+                  <span>{accountDetails.email || "Not set"}</span>
+                  {accountDetails.isEmailVerified && (
+                    <span className="flex items-center text-emerald-600" title="Email verified">
+                      <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             <div>
@@ -469,7 +652,6 @@ export default function AccountInfoPage() {
                       setError(null);
                       setSuccess(null);
                       setPasswordData({
-                        currentPassword: "",
                         newPassword: "",
                         confirmPassword: "",
                       });
@@ -483,23 +665,6 @@ export default function AccountInfoPage() {
 
               {showChangePassword && (
                 <div className="mt-4 space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div>
-                    <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-slate-400 mb-2">
-                      Current Password
-                    </label>
-                    <input
-                      type="password"
-                      value={passwordData.currentPassword}
-                      onChange={(e) =>
-                        setPasswordData((prev) => ({
-                          ...prev,
-                          currentPassword: e.target.value,
-                        }))
-                      }
-                      placeholder="Enter current password"
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#2f4bff]"
-                    />
-                  </div>
                   <div>
                     <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-slate-400 mb-2">
                       New Password
@@ -539,7 +704,6 @@ export default function AccountInfoPage() {
                       onClick={() => {
                         setShowChangePassword(false);
                         setPasswordData({
-                          currentPassword: "",
                           newPassword: "",
                           confirmPassword: "",
                         });

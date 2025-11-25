@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
@@ -33,6 +33,7 @@ export default function OTPLoginForm({ onSwitchToEmail, onLoginSuccess }: OTPLog
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   const formatPhoneNumber = (phone: string): string => {
     // Remove any non-digit characters
@@ -83,12 +84,58 @@ export default function OTPLoginForm({ onSwitchToEmail, onLoginSuccess }: OTPLog
 
       setStatus("OTP sent successfully");
       setStep("verify");
+      // Start cooldown timer (60 seconds)
+      setResendCooldown(60);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send OTP");
     } finally {
       setLoading(false);
     }
   };
+
+  // Handle resend OTP
+  const handleResendOtp = async () => {
+    if (resendCooldown > 0 || !phone.trim()) return;
+    
+    setError(null);
+    setStatus(null);
+    setCode("");
+    setLoading(true);
+
+    try {
+      // Format phone number before sending
+      const formattedPhone = formatPhoneNumber(phone);
+      
+      const response = await fetch(`${API_BASE}/api/otp/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: formattedPhone }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as ApiResponse;
+        throw new Error(data.message || "Failed to send OTP");
+      }
+
+      setStatus("OTP resent successfully");
+      // Start cooldown timer (60 seconds)
+      setResendCooldown(60);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to resend OTP");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Cooldown timer effect
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => {
+        setResendCooldown(resendCooldown - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendCooldown]);
 
   const verifyOtp = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -201,6 +248,17 @@ export default function OTPLoginForm({ onSwitchToEmail, onLoginSuccess }: OTPLog
             value={code}
             onChange={(event) => setCode(event.target.value)}
           />
+          <div className="flex items-center justify-center gap-2">
+            <span className="text-xs text-slate-500">Didn't receive OTP?</span>
+            <button
+              type="button"
+              onClick={handleResendOtp}
+              disabled={resendCooldown > 0 || loading}
+              className="text-xs font-semibold text-[#2f4bff] hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {resendCooldown > 0 ? `Resend OTP (${resendCooldown}s)` : "Resend OTP"}
+            </button>
+          </div>
         </div>
       )}
 

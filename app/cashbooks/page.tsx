@@ -23,6 +23,7 @@ interface Book {
   transactionCount: number;
   memberCount?: number;
   totalBalance: number;
+  masterWalletBalance?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -55,13 +56,123 @@ export default function CashbooksPage() {
 
   const [selectedBusinessId, setSelectedBusinessId] = useState<string | null>(null);
   const [selectedBusinessName, setSelectedBusinessName] = useState<string | null>(null);
+  
+  // Email verification states
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [isEmailVerified, setIsEmailVerified] = useState(false);
+  const [emailInput, setEmailInput] = useState("");
+  const [sendingVerificationEmail, setSendingVerificationEmail] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
+
+  // Fetch account details to check email verification status
+  const fetchAccountDetails = async () => {
+    try {
+      const token = getAuthToken();
+      if (!token) return;
+
+      if (!API_BASE) {
+        console.warn("API_BASE is not defined");
+        return;
+      }
+
+      const response = await fetch(`${API_BASE}/api/auth/account-details`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setUserEmail(data.email);
+        setIsEmailVerified(data.isEmailVerified || false);
+        setEmailInput(data.email || "");
+      }
+    } catch (err) {
+      // Silently fail - this is not critical for page functionality
+      console.error("Error fetching account details:", err);
+    }
+  };
 
   // Load selected business ID from localStorage on mount
   useEffect(() => {
     const businessId = localStorage.getItem("selectedBusinessId");
     setSelectedBusinessId(businessId);
     fetchBusinessName(businessId);
+    fetchAccountDetails();
   }, []);
+
+  // Handle send verification email
+  const handleSendVerificationEmail = async () => {
+    if (!emailInput.trim()) {
+      setEmailError("Please enter an email address");
+      return;
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(emailInput.trim())) {
+      setEmailError("Please enter a valid email address");
+      return;
+    }
+
+    try {
+      setSendingVerificationEmail(true);
+      setEmailError(null);
+      setEmailSuccess(null);
+
+      const token = getAuthToken();
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
+
+      // First, update the email if it's different
+      if (emailInput.trim().toLowerCase() !== userEmail?.toLowerCase()) {
+        const updateResponse = await fetch(`${API_BASE}/api/auth/change-email`, {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            newEmail: emailInput.trim().toLowerCase(),
+          }),
+        });
+
+        if (!updateResponse.ok) {
+          const errorData = await updateResponse.json().catch(() => ({}));
+          throw new Error(errorData.message || "Failed to update email");
+        }
+      }
+
+      // Then send verification email
+      const response = await fetch(`${API_BASE}/api/auth/send-verification-email`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to send verification email");
+      }
+
+      setEmailSuccess("Verification email sent! Please check your inbox and click the link to verify your email.");
+      // Refresh account details
+      setTimeout(() => {
+        fetchAccountDetails();
+      }, 1000);
+    } catch (err) {
+      setEmailError(err instanceof Error ? err.message : "Failed to send verification email");
+    } finally {
+      setSendingVerificationEmail(false);
+    }
+  };
 
   const fetchBusinessName = async (businessId: string | null) => {
     if (!businessId) {
@@ -72,6 +183,11 @@ export default function CashbooksPage() {
     try {
       const token = getAuthToken();
       if (!token) return;
+
+      if (!API_BASE) {
+        console.warn("API_BASE is not defined");
+        return;
+      }
 
       const response = await fetch(`${API_BASE}/api/businesses`, {
         headers: {
@@ -88,6 +204,7 @@ export default function CashbooksPage() {
         }
       }
     } catch (err) {
+      // Silently fail - this is not critical for page functionality
       console.error("Error fetching business name:", err);
     }
   };
@@ -120,6 +237,13 @@ export default function CashbooksPage() {
       const token = getAuthToken();
       if (!token) {
         setError("Not authenticated");
+        setLoading(false);
+        return;
+      }
+
+      if (!API_BASE) {
+        setError("API configuration error. Please check your environment variables.");
+        setLoading(false);
         return;
       }
 
@@ -158,7 +282,13 @@ export default function CashbooksPage() {
       setBooks(sortedBooks);
     } catch (err) {
       console.error("Error fetching books:", err);
-      setError(err instanceof Error ? err.message : "Failed to load cashbooks");
+      const errorMessage = err instanceof Error ? err.message : "Failed to load cashbooks";
+      // Check if it's a network error
+      if (errorMessage.includes("Failed to fetch") || errorMessage.includes("NetworkError")) {
+        setError("Unable to connect to the server. Please make sure the backend is running.");
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -618,9 +748,26 @@ export default function CashbooksPage() {
                 <h4 className="text-base font-semibold text-[#1f2937]">Login via Email ID</h4>
               </div>
               <p className="mb-4 text-sm text-slate-600">Verify email to login to desktop</p>
-              <button className="w-full rounded-lg bg-[#2f4bff] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#2f4bff]/90">
-                Add Email
-              </button>
+              {isEmailVerified && userEmail ? (
+                <div className="flex items-center justify-center gap-2 rounded-lg bg-emerald-100 px-4 py-2 text-sm font-medium text-emerald-700">
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>Email Verified</span>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    setShowEmailModal(true);
+                    setEmailInput(userEmail || "");
+                    setEmailError(null);
+                    setEmailSuccess(null);
+                  }}
+                  className="w-full rounded-lg bg-[#2f4bff] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#2f4bff]/90"
+                >
+                  Add Email
+                </button>
+              )}
             </div>
 
             {/* Tried Passbook Card */}
@@ -912,6 +1059,85 @@ export default function CashbooksPage() {
           </div>
         )}
 
+        {/* Email Verification Modal */}
+        {showEmailModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <h2 className="text-lg font-semibold text-[#1f2937]">Add Email Address</h2>
+                <button
+                  onClick={() => {
+                    setShowEmailModal(false);
+                    setEmailInput(userEmail || "");
+                    setEmailError(null);
+                    setEmailSuccess(null);
+                  }}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="p-6">
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Email Address <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={emailInput}
+                      onChange={(e) => setEmailInput(e.target.value)}
+                      placeholder="Enter your email address"
+                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-[#2f4bff] focus:outline-none focus:ring-2 focus:ring-[#2f4bff]/20"
+                      disabled={sendingVerificationEmail}
+                    />
+                  </div>
+
+                  {emailError && (
+                    <div className="rounded-lg bg-red-50 border border-red-200 p-3">
+                      <p className="text-sm text-red-800">{emailError}</p>
+                    </div>
+                  )}
+
+                  {emailSuccess && (
+                    <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3">
+                      <p className="text-sm text-emerald-800">{emailSuccess}</p>
+                    </div>
+                  )}
+
+                  <div className="rounded-lg bg-blue-50 border border-blue-200 p-3">
+                    <p className="text-xs text-blue-800">
+                      We'll send a verification link to this email address. Click the link in the email to verify your account.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+                <button
+                  onClick={() => {
+                    setShowEmailModal(false);
+                    setEmailInput(userEmail || "");
+                    setEmailError(null);
+                    setEmailSuccess(null);
+                  }}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  disabled={sendingVerificationEmail}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSendVerificationEmail}
+                  disabled={sendingVerificationEmail || !emailInput.trim()}
+                  className="rounded-xl bg-[#2f4bff] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#2f4bff]/90 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {sendingVerificationEmail ? "Sending..." : "Verify Email"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </AppShell>
     </ProtectedRoute>
   );

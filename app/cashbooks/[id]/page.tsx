@@ -20,6 +20,7 @@ interface Book {
   currencyCode: string;
   ownerId: string;
   totalBalance: number;
+  masterWalletBalance: number;
 }
 
 export default function BookDetailPage() {
@@ -113,6 +114,23 @@ export default function BookDetailPage() {
     }
   };
 
+  // Close modal handler
+  const handleCloseModal = () => {
+    setShowCashEntryModal(false);
+    setEditingEntry(null);
+    // Reset form
+    setFormData({
+      date: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+      time: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }),
+      amount: "",
+      partyName: "",
+      remarks: "",
+      category: "",
+      paymentMode: "Cash",
+    });
+    setAttachedFiles([]);
+  };
+
   const [bookMembers, setBookMembers] = useState<Array<{ id: string; name: string; email?: string }>>([]);
   const [paymentModesList] = useState([{ id: "1", name: "Cash" }, { id: "2", name: "Online" }]);
   const [partiesList, setPartiesList] = useState<any[]>([]);
@@ -122,6 +140,10 @@ export default function BookDetailPage() {
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [entries, setEntries] = useState<any[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [entriesPerPage] = useState(50);
+  const [showPageSelector, setShowPageSelector] = useState(false);
+  const [selectedEntries, setSelectedEntries] = useState<Set<string>>(new Set());
   const [selectedEntry, setSelectedEntry] = useState<any | null>(null);
   const [editingEntry, setEditingEntry] = useState<any | null>(null);
   const [showMoreActionsModal, setShowMoreActionsModal] = useState(false);
@@ -161,6 +183,8 @@ export default function BookDetailPage() {
       fetchBooksList();
       fetchBookMembers();
     }
+    // Reset to first page when filters change
+    setCurrentPage(1);
   }, [bookId, duration, types, parties, members, paymentModes, categories, searchQuery]);
 
   // Close dropdowns when clicking outside
@@ -168,6 +192,11 @@ export default function BookDetailPage() {
     const handleClickOutside = (event: MouseEvent) => {
       if (showReportsDropdown && !(event.target as Element).closest('.relative')) {
         setShowReportsDropdown(false);
+      }
+      // Close page selector dropdown
+      const pageButton = (event.target as Element).closest('[data-page-selector-button]');
+      if (!pageButton) {
+        setShowPageSelector(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -1488,7 +1517,7 @@ export default function BookDetailPage() {
                   </div>
                   <div className="flex-1">
                     <p className="text-sm font-medium text-slate-600">Cash In</p>
-                    <p className="text-2xl font-bold text-slate-900">
+                    <p className="text-2xl font-bold text-green-600">
                       {entries
                         .filter((e) => e.entry_type === "cash_in")
                         .reduce((sum, e) => sum + parseFloat(e.amount || 0), 0)
@@ -1511,7 +1540,7 @@ export default function BookDetailPage() {
                   </div>
                   <div className="flex-1">
                     <p className="text-sm font-medium text-slate-600">Cash Out</p>
-                    <p className="text-2xl font-bold text-slate-900">
+                    <p className="text-2xl font-bold text-red-600">
                       {entries
                         .filter((e) => e.entry_type === "cash_out")
                         .reduce((sum, e) => sum + parseFloat(e.amount || 0), 0)
@@ -1582,28 +1611,182 @@ export default function BookDetailPage() {
               </div>
             ) : (
               <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                {/* Pagination */}
+                {(() => {
+                  const totalEntries = entries.length;
+                  const totalPages = Math.ceil(totalEntries / entriesPerPage);
+                  const startIndex = (currentPage - 1) * entriesPerPage;
+                  const endIndex = Math.min(startIndex + entriesPerPage, totalEntries);
+                  const startEntry = totalEntries > 0 ? startIndex + 1 : 0;
+                  const endEntry = endIndex;
+                  
+                  return totalPages > 0 ? (
+                    <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
+                      <div className="flex flex-1 justify-between sm:hidden">
+                        <button
+                          onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                          disabled={currentPage === 1}
+                          className={`relative inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium ${
+                            currentPage === 1
+                              ? "text-slate-300 cursor-not-allowed"
+                              : "text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          Previous
+                        </button>
+                        <button
+                          onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                          disabled={currentPage === totalPages}
+                          className={`relative ml-3 inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium ${
+                            currentPage === totalPages
+                              ? "text-slate-300 cursor-not-allowed"
+                              : "text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          Next
+                        </button>
+                      </div>
+                      <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm text-slate-600">
+                            Showing <span className="font-medium">{startEntry}</span> - <span className="font-medium">{endEntry}</span> of{" "}
+                            <span className="font-medium">{totalEntries}</span> entries
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="relative">
+                            <button
+                              data-page-selector-button
+                              onClick={() => setShowPageSelector(!showPageSelector)}
+                              className="relative inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#2f4bff] focus:ring-offset-2"
+                            >
+                              Page {currentPage}
+                              <svg className="ml-2 h-4 w-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                              </svg>
+                            </button>
+                            {showPageSelector && (
+                              <div className="absolute top-full left-0 mt-2 w-32 rounded-md border border-slate-200 bg-white shadow-lg z-10 max-h-60 overflow-auto">
+                                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                                  <button
+                                    key={page}
+                                    onClick={() => {
+                                      setCurrentPage(page);
+                                      setShowPageSelector(false);
+                                    }}
+                                    className={`block w-full text-left px-4 py-2 text-sm ${
+                                      currentPage === page
+                                        ? "bg-[#2f4bff] text-white"
+                                        : "text-slate-700 hover:bg-slate-50"
+                                    }`}
+                                  >
+                                    Page {page}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <span className="text-sm text-slate-600">of {totalPages}</span>
+                          <button
+                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                            disabled={currentPage === 1}
+                            className={`relative inline-flex items-center rounded-md border border-slate-300 bg-white p-2 text-sm font-medium ${
+                              currentPage === 1
+                                ? "text-slate-300 cursor-not-allowed"
+                                : "text-slate-700 hover:bg-slate-50"
+                            }`}
+                          >
+                            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                            disabled={currentPage === totalPages}
+                            className={`relative inline-flex items-center rounded-md border border-slate-300 bg-white p-2 text-sm font-medium ${
+                              currentPage === totalPages
+                                ? "text-slate-300 cursor-not-allowed"
+                                : "text-slate-700 hover:bg-slate-50"
+                            }`}
+                          >
+                            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-slate-200">
                     <thead className="bg-slate-50">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Date</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          <input
+                            type="checkbox"
+                            checked={(() => {
+                              const totalEntries = entries.length;
+                              const totalPages = Math.ceil(totalEntries / entriesPerPage);
+                              const startIndex = (currentPage - 1) * entriesPerPage;
+                              const endIndex = startIndex + entriesPerPage;
+                              const paginatedEntries = entries.slice(startIndex, endIndex);
+                              return paginatedEntries.length > 0 && paginatedEntries.every((e: any) => selectedEntries.has(e.id));
+                            })()}
+                            onChange={(e) => {
+                              const totalEntries = entries.length;
+                              const totalPages = Math.ceil(totalEntries / entriesPerPage);
+                              const startIndex = (currentPage - 1) * entriesPerPage;
+                              const endIndex = startIndex + entriesPerPage;
+                              const paginatedEntries = entries.slice(startIndex, endIndex);
+                              
+                              if (e.target.checked) {
+                                const newSelected = new Set(selectedEntries);
+                                paginatedEntries.forEach((entry: any) => newSelected.add(entry.id));
+                                setSelectedEntries(newSelected);
+                              } else {
+                                const newSelected = new Set(selectedEntries);
+                                paginatedEntries.forEach((entry: any) => newSelected.delete(entry.id));
+                                setSelectedEntries(newSelected);
+                              }
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="h-4 w-4 rounded border-slate-300 text-[#2f4bff] focus:ring-2 focus:ring-[#2f4bff] focus:ring-offset-2"
+                          />
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Date & Time</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Remarks</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Type</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Party</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Category</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Mode</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Remarks</th>
                         <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Amount</th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Balance</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 bg-white">
-                      {entries.map((entry: any) => {
+                      {(() => {
+                        const totalEntries = entries.length;
+                        const startIndex = (currentPage - 1) * entriesPerPage;
+                        const endIndex = startIndex + entriesPerPage;
+                        const paginatedEntries = entries.slice(startIndex, endIndex);
+
+                        return paginatedEntries.map((entry: any) => {
                         const entryDate = new Date(entry.entry_date);
-                        const formattedDate = entryDate.toLocaleDateString("en-GB", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        });
-                        const formattedTime = entry.entry_time ? entry.entry_time.substring(0, 5) : "";
+                        const day = entryDate.getDate();
+                        const month = entryDate.toLocaleDateString("en-GB", { month: "short" });
+                        const year = entryDate.getFullYear();
+                        const formattedDate = `${day} ${month}, ${year}`;
+                        // Format time as "HH:MM AM/PM"
+                        let formattedTime = "";
+                        if (entry.entry_time) {
+                          const timeStr = entry.entry_time.substring(0, 5); // Get HH:MM
+                          const [hours, minutes] = timeStr.split(':');
+                          const hour24 = parseInt(hours);
+                          const hour12 = hour24 === 0 ? 12 : hour24 > 12 ? hour24 - 12 : hour24;
+                          const ampm = hour24 >= 12 ? 'PM' : 'AM';
+                          formattedTime = `${hour12.toString().padStart(2, '0')}:${minutes} ${ampm}`;
+                        }
                         const createdByName = entry.created_by_first_name || entry.created_by_last_name
                           ? `${entry.created_by_first_name || ""} ${entry.created_by_last_name || ""}`.trim()
                           : entry.created_by_email?.split("@")[0] || "Unknown";
@@ -1622,9 +1805,34 @@ export default function BookDetailPage() {
                               });
                             }}
                           >
+                            <td className="whitespace-nowrap px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={selectedEntries.has(entry.id)}
+                                onChange={(e) => {
+                                  const newSelected = new Set(selectedEntries);
+                                  if (e.target.checked) {
+                                    newSelected.add(entry.id);
+                                  } else {
+                                    newSelected.delete(entry.id);
+                                  }
+                                  setSelectedEntries(newSelected);
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="h-4 w-4 rounded border-slate-300 text-[#2f4bff] focus:ring-2 focus:ring-[#2f4bff] focus:ring-offset-2"
+                              />
+                            </td>
                             <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600">
-                              <div>{formattedDate}</div>
-                              {formattedTime && <div className="text-xs text-slate-400">{formattedTime}</div>}
+                              <div className="font-semibold text-slate-900">{formattedDate}</div>
+                              {formattedTime && <div className="text-xs text-slate-500">{formattedTime}</div>}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-slate-600">
+                              <div className="max-w-xs truncate" title={entry.remarks || ""}>
+                                {entry.remarks || "-"}
+                              </div>
+                              {createdByName && (
+                                <div className="text-xs text-slate-400">by {createdByName}</div>
+                              )}
                             </td>
                             <td className="whitespace-nowrap px-4 py-3">
                               <span
@@ -1640,14 +1848,6 @@ export default function BookDetailPage() {
                             <td className="px-4 py-3 text-sm text-slate-600">{entry.party_name || "-"}</td>
                             <td className="px-4 py-3 text-sm text-slate-600">{entry.category_name || "-"}</td>
                             <td className="px-4 py-3 text-sm text-slate-600">{entry.payment_mode || "-"}</td>
-                            <td className="px-4 py-3 text-sm text-slate-600">
-                              <div className="max-w-xs truncate" title={entry.remarks || ""}>
-                                {entry.remarks || "-"}
-                              </div>
-                              {createdByName && (
-                                <div className="text-xs text-slate-400">by {createdByName}</div>
-                              )}
-                            </td>
                             <td
                               className={`whitespace-nowrap px-4 py-3 text-right text-sm font-semibold ${
                                 entry.entry_type === "cash_in" ? "text-emerald-600" : "text-red-600"
@@ -1659,9 +1859,16 @@ export default function BookDetailPage() {
                                 maximumFractionDigits: 2,
                               })}
                             </td>
+                            <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-slate-900">
+                              {(book?.masterWalletBalance || 0).toLocaleString("en-IN", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
                           </tr>
                         );
-                      })}
+                      });
+                      })()}
                     </tbody>
                   </table>
                 </div>
@@ -1690,29 +1897,21 @@ export default function BookDetailPage() {
 
         {/* Add Cash Entry Modal */}
         {showCashEntryModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/50 p-4">
-              <div className="h-full w-full max-w-2xl overflow-y-auto rounded-l-2xl bg-white shadow-xl">
+          <div 
+            className="fixed inset-0 z-50 flex items-center justify-end bg-black/50 p-4"
+            onClick={handleCloseModal}
+          >
+              <div 
+                className="h-full w-full max-w-lg overflow-y-auto rounded-l-2xl bg-white shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+              >
                 {/* Modal Header */}
                 <div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
                   <h2 className="text-lg font-semibold text-[#1f2937]">
                     {editingEntry ? "Edit Entry" : `Add ${entryType === "cash_in" ? "Cash In" : "Cash Out"} Entry`}
                   </h2>
                   <button
-                    onClick={() => {
-                      setShowCashEntryModal(false);
-                      setEditingEntry(null);
-                      // Reset form
-                      setFormData({
-                        date: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
-                        time: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }),
-                        amount: "",
-                        partyName: "",
-                        remarks: "",
-                        category: "",
-                        paymentMode: "Cash",
-                      });
-                      setAttachedFiles([]);
-                    }}
+                    onClick={handleCloseModal}
                     className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                   >
                     <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -1728,7 +1927,7 @@ export default function BookDetailPage() {
                     className={`flex-1 border-b-2 px-4 py-3 text-sm font-medium transition ${
                       entryType === "cash_in"
                         ? "border-emerald-600 text-emerald-600"
-                        : "border-transparent text-slate-500 hover:text-slate-700"
+                        : "border-transparent text-emerald-500 hover:text-emerald-700"
                     }`}
                   >
                     Cash In
@@ -1738,7 +1937,7 @@ export default function BookDetailPage() {
                     className={`flex-1 border-b-2 px-4 py-3 text-sm font-medium transition ${
                       entryType === "cash_out"
                         ? "border-red-600 text-red-600"
-                        : "border-transparent text-slate-500 hover:text-slate-700"
+                        : "border-transparent text-red-500 hover:text-red-700"
                     }`}
                   >
                     Cash Out
