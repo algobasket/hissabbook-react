@@ -71,6 +71,7 @@ export default function SettingsPage() {
     businessMobile: "",
     businessEmail: "",
     masterWalletUpi: null,
+    masterWalletBalance: 0,
   });
 
   // Check if user has access to settings page
@@ -153,6 +154,7 @@ export default function SettingsPage() {
       businessMobile: business.businessMobile || "",
       businessEmail: business.businessEmail || business.ownerEmail || "",
       masterWalletUpi: business.masterWalletUpi || null,
+      masterWalletBalance: business.masterWalletBalance || 0,
     });
   };
 
