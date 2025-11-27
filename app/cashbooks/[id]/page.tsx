@@ -4894,9 +4894,23 @@ export default function BookDetailPage() {
                     // Construct full URL - handle relative paths
                     let attachmentUrl = previewAttachment.url || previewAttachment.path || previewAttachment.file_path;
                     if (attachmentUrl) {
-                      if (attachmentUrl.startsWith('/')) {
-                        attachmentUrl = `${API_BASE}${attachmentUrl}`;
+                      // If URL already starts with http/https, use it as-is
+                      if (attachmentUrl.startsWith('http://') || attachmentUrl.startsWith('https://')) {
+                        // Already a full URL, use as-is
+                      } else if (attachmentUrl.startsWith('/')) {
+                        // Normalize API_BASE (remove trailing slash)
+                        const apiBaseNormalized = API_BASE.replace(/\/$/, '');
+                        
+                        // Check if URL already contains the API_BASE path to avoid duplication
+                        if (attachmentUrl.startsWith(apiBaseNormalized)) {
+                          // URL already includes API_BASE, use as-is
+                          attachmentUrl = attachmentUrl;
+                        } else {
+                          // Prepend API_BASE
+                          attachmentUrl = `${apiBaseNormalized}${attachmentUrl}`;
+                        }
                       } else if (!attachmentUrl.startsWith('http')) {
+                        // Relative path without leading slash
                         attachmentUrl = `${API_BASE}/${attachmentUrl}`;
                       }
                     }
