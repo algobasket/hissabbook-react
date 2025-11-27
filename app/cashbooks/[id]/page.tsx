@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import AppShell from "../../components/AppShell";
 import ProtectedRoute from "../../components/ProtectedRoute";
-import { getAuthToken } from "../../utils/auth";
+import { getAuthToken, getUserRole, isAdmin, fetchUserPermissions } from "../../utils/auth";
 import jsPDF from "jspdf";
 
 const API_BASE =
@@ -157,6 +157,7 @@ export default function BookDetailPage() {
   const [reportData, setReportData] = useState<any>(null);
   const [generatingReport, setGeneratingReport] = useState(false);
   const [showPdfSettings, setShowPdfSettings] = useState(false);
+  const [userPermissions, setUserPermissions] = useState<string[]>([]);
   const [pdfSettings, setPdfSettings] = useState({
     columns: {
       date: true,
@@ -186,6 +187,11 @@ export default function BookDetailPage() {
     // Reset to first page when filters change
     setCurrentPage(1);
   }, [bookId, duration, types, parties, members, paymentModes, categories, searchQuery]);
+
+  // Fetch user permissions on mount
+  useEffect(() => {
+    fetchUserPermissions().then(setUserPermissions);
+  }, []);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -545,25 +551,175 @@ export default function BookDetailPage() {
     const pageHeight = doc.internal.pageSize.getHeight();
     let yPosition = 20;
 
-    // Header with logo and title
-    doc.setFillColor(47, 75, 255); // #2f4bff
-    doc.rect(0, 0, pageWidth, 30, "F");
+    // Fetch small logo from site settings (try public endpoint first, then authenticated)
+    let smallLogoBase64: string | null = null;
+    try {
+      // Try public endpoint first
+      let logoFilename: string | null = null;
+      try {
+        const publicResponse = await fetch(`${API_BASE}/api/settings/site/public`);
+        if (publicResponse.ok) {
+          const publicSettings = await publicResponse.json();
+          logoFilename = publicSettings.smallLogoUrl || null;
+        }
+      } catch (publicErr) {
+        // If public endpoint fails, try authenticated endpoint
+        const token = getAuthToken();
+        if (token) {
+          const response = await fetch(`${API_BASE}/api/settings/site`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (response.ok) {
+            const siteSettings = await response.json();
+            logoFilename = siteSettings.smallLogoUrl || null;
+          }
+        }
+      }
+
+      if (logoFilename) {
+        const logoUrl = logoFilename.startsWith('http') 
+          ? logoFilename 
+          : `${API_BASE}/uploads/${logoFilename}`;
+        
+        console.log("Fetching logo from:", logoUrl);
+        
+        // Fetch image and convert to base64 using Image object for better compatibility
+        try {
+          // Use Image object to load and then convert to canvas for base64
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          
+          let resolved = false;
+          smallLogoBase64 = await new Promise<string | null>((resolve) => {
+            const timeout = setTimeout(() => {
+              if (!resolved) {
+                resolved = true;
+                console.warn("Logo loading timeout");
+                resolve(null);
+              }
+            }, 3000);
+            
+            img.onload = () => {
+              if (resolved) return;
+              try {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                  ctx.drawImage(img, 0, 0);
+                  const base64 = canvas.toDataURL('image/png');
+                  console.log("Logo converted to base64, length:", base64.length);
+                  resolved = true;
+                  clearTimeout(timeout);
+                  resolve(base64);
+                } else {
+                  resolved = true;
+                  clearTimeout(timeout);
+                  resolve(null);
+                }
+              } catch (err) {
+                console.warn("Error converting logo to base64:", err);
+                resolved = true;
+                clearTimeout(timeout);
+                resolve(null);
+              }
+            };
+            img.onerror = () => {
+              if (resolved) return;
+              console.warn("Failed to load logo image");
+              resolved = true;
+              clearTimeout(timeout);
+              resolve(null);
+            };
+            img.src = logoUrl;
+          });
+        } catch (imgErr) {
+          console.warn("Failed to load logo image:", imgErr);
+        }
+      } else {
+        console.warn("No small logo filename found in site settings");
+      }
+    } catch (err) {
+      console.warn("Failed to fetch site logo:", err);
+      // Continue without logo if fetch fails
+    }
+
+    // Header with title - improved design
+    doc.setFillColor(0, 51, 104); // #003368
+    doc.rect(0, 0, pageWidth, 35, "F");
     
-    // Logo (C in a circle)
+    // Add small logo if available (on left side)
+    let logoWidth = 0;
+    let logoHeight = 0;
+    if (smallLogoBase64) {
+      try {
+        // Load image to get actual dimensions for aspect ratio
+        const img = new Image();
+        img.src = smallLogoBase64;
+        
+        await new Promise<void>((resolve) => {
+          if (img.complete) {
+            resolve();
+          } else {
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+            setTimeout(() => resolve(), 1000); // Timeout after 1 second
+          }
+        });
+        
+        if (img.width && img.height) {
+          // Calculate dimensions maintaining aspect ratio
+          // Max height is 25px to fit in header (35px height with some padding)
+          const maxHeight = 25;
+          const aspectRatio = img.width / img.height;
+          
+          logoHeight = maxHeight;
+          logoWidth = maxHeight * aspectRatio;
+          
+          // Ensure logo doesn't get too wide (max 60px width)
+          if (logoWidth > 60) {
+            logoWidth = 60;
+            logoHeight = 60 / aspectRatio;
+          }
+          
+          // Position logo on the left side of header
+          const logoX = 18;
+          const logoY = (35 - logoHeight) / 2; // Center vertically in header
+          
+          // Since we convert to canvas, it will always be PNG format
+          // Extract base64 data (remove data URL prefix)
+          const base64Data = smallLogoBase64.split(',')[1];
+          
+          if (base64Data) {
+            doc.addImage(base64Data, 'PNG', logoX, logoY, logoWidth, logoHeight);
+            console.log("Logo added to PDF successfully at", logoX, logoY, "size:", logoWidth, "x", logoHeight, "aspect ratio:", aspectRatio);
+          } else {
+            console.warn("Failed to extract base64 data from logo");
+          }
+        } else {
+          console.warn("Failed to get image dimensions");
+        }
+      } catch (err) {
+        console.error("Failed to add logo to PDF:", err);
+        // Continue without logo
+      }
+    } else {
+      console.warn("No logo available to add to PDF");
+    }
+    
+    // Report title - on left side (after logo if present)
     doc.setTextColor(255, 255, 255);
-    doc.setFontSize(20);
+    doc.setFontSize(18);
     doc.setFont("helvetica", "bold");
-    doc.text("C", 15, 20);
-    
-    // Report title
-    doc.setFontSize(16);
-    doc.text("HissabBook Report", pageWidth - 15, 20, { align: "right" });
+    const titleX = logoWidth > 0 ? 18 + logoWidth + 10 : 18; // Add spacing after logo
+    doc.text("HissabBook Report", titleX, 24);
 
-    yPosition = 40;
+    yPosition = 45;
 
-    // Generated info
-    doc.setTextColor(100, 100, 100);
-    doc.setFontSize(10);
+    // Generated info - improved styling
+    doc.setTextColor(71, 85, 105); // slate-600
+    doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
     const generatedDate = new Date().toLocaleString("en-GB", {
       day: "numeric",
@@ -573,13 +729,12 @@ export default function BookDetailPage() {
       minute: "2-digit",
       hour12: true,
     });
-    const generatedBy = data.generatedBy || "User";
-    doc.text(`Generated On - ${generatedDate}. Generated by - ${generatedBy}`, pageWidth / 2, yPosition, { align: "center" });
-    yPosition += 10;
+    doc.text(`Generated On - ${generatedDate}`, pageWidth / 2, yPosition, { align: "center" });
+    yPosition += 12;
 
-    // Book title
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(14);
+    // Book title - improved styling
+    doc.setTextColor(31, 41, 55); // slate-800
+    doc.setFontSize(16);
     doc.setFont("helvetica", "bold");
     const filterTypeLabel = data.filterType === "day" ? "Day-wise" : 
                            data.filterType === "party" ? "Party-wise" : 
@@ -588,37 +743,59 @@ export default function BookDetailPage() {
     const bookTitle = data.book?.name || "Cashbook";
     const fullTitle = filterTypeLabel ? `${bookTitle} (${filterTypeLabel} Summary)` : bookTitle;
     doc.text(fullTitle, pageWidth / 2, yPosition, { align: "center" });
-    yPosition += 15;
+    yPosition += 18;
 
-    // Summary box
+    // Summary box - improved design with individual borders for each section
+    const boxHeight = 30;
+    const boxWidth = (pageWidth - 40 - 20) / 3; // Divide available width by 3, with spacing
+    const boxSpacing = 10;
+    const startX = 20;
+    
+    // Draw three separate boxes with borders
     doc.setFillColor(248, 250, 252); // slate-50
-    doc.rect(20, yPosition - 5, pageWidth - 40, 25, "F");
+    doc.setDrawColor(203, 213, 225); // slate-300 for border
+    doc.setLineWidth(0.5);
     
-    doc.setFontSize(10);
+    // Box 1: Total Cash In
+    doc.rect(startX, yPosition - 5, boxWidth, boxHeight, "FD");
+    
+    // Box 2: Total Cash Out
+    doc.rect(startX + boxWidth + boxSpacing, yPosition - 5, boxWidth, boxHeight, "FD");
+    
+    // Box 3: Final Balance
+    doc.rect(startX + (boxWidth + boxSpacing) * 2, yPosition - 5, boxWidth, boxHeight, "FD");
+    
+    // Labels
+    doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
-    doc.setTextColor(100, 100, 100);
-    doc.text("Total Cash In", 30, yPosition + 5);
-    doc.text("Total Cash Out", pageWidth / 2, yPosition + 5);
+    doc.setTextColor(71, 85, 105); // slate-600
+    doc.text("Total Cash In", startX + boxWidth / 2, yPosition + 4, { align: "center" });
+    doc.text("Total Cash Out", startX + boxWidth + boxSpacing + boxWidth / 2, yPosition + 4, { align: "center" });
     const balanceLabel = data.filterType && data.filterType !== "all" ? "Net Balance" : "Final Balance";
-    doc.text(balanceLabel, pageWidth - 30, yPosition + 5, { align: "right" });
+    doc.text(balanceLabel, startX + (boxWidth + boxSpacing) * 2 + boxWidth / 2, yPosition + 4, { align: "center" });
     
-    doc.setFontSize(12);
+    // Values
+    doc.setFontSize(13);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(22, 163, 74); // green-600
-    doc.text(String(data.summary?.totalCashIn || 0), 30, yPosition + 12);
+    const totalCashIn = parseFloat(data.summary?.totalCashIn || 0);
+    doc.text(totalCashIn.toFixed(2), startX + boxWidth / 2, yPosition + 15, { align: "center" });
     doc.setTextColor(220, 38, 38); // red-600
-    doc.text(String(data.summary?.totalCashOut || 0), pageWidth / 2, yPosition + 12);
-    doc.setTextColor(0, 0, 0);
-    doc.text(String(data.summary?.finalBalance || 0), pageWidth - 30, yPosition + 12, { align: "right" });
+    const totalCashOut = parseFloat(data.summary?.totalCashOut || 0);
+    doc.text(totalCashOut.toFixed(2), startX + boxWidth + boxSpacing + boxWidth / 2, yPosition + 15, { align: "center" });
+    // Final Balance color based on value
+    const finalBalance = parseFloat(data.summary?.finalBalance || 0);
+    doc.setTextColor(finalBalance >= 0 ? 22 : 220, finalBalance >= 0 ? 163 : 38, finalBalance >= 0 ? 74 : 38);
+    doc.text(finalBalance.toFixed(2), startX + (boxWidth + boxSpacing) * 2 + boxWidth / 2, yPosition + 15, { align: "center" });
     
-    yPosition += 25;
+    yPosition += 32;
 
-    // Total entries
-    doc.setFontSize(10);
+    // Total entries - improved styling
+    doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
-    doc.setTextColor(100, 100, 100);
+    doc.setTextColor(71, 85, 105); // slate-600
     doc.text(`Total No. of entries: ${data.totalEntries || 0}`, 20, yPosition);
-    yPosition += 10;
+    yPosition += 12;
 
     // Table headers based on filter type and PDF settings
     const headers: string[] = [];
@@ -688,10 +865,23 @@ export default function BookDetailPage() {
               month: "short",
               year: "2-digit",
             });
-            row.push(date);
+            // Add time if available
+            const timeStr = entry.entry_time 
+              ? new Date(`2000-01-01T${entry.entry_time}`).toLocaleTimeString("en-GB", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: true,
+                })
+              : "";
+            const dateTimeStr = timeStr ? `${date}, ${timeStr}` : date;
+            row.push(dateTimeStr);
           }
           if (pdfSettings.columns.remark) {
-            row.push(entry.remarks || "-");
+            const remarks = entry.remarks || "-";
+            const truncatedRemarks = remarks === "-" || remarks.length <= 10 
+              ? remarks 
+              : remarks.substring(0, 10) + "...";
+            row.push(truncatedRemarks);
           }
           if (pdfSettings.columns.party) {
             row.push(entry.party_name || "-");
@@ -756,37 +946,96 @@ export default function BookDetailPage() {
       }
     }
 
-    // Generate table - autoTable is a function that takes doc as first parameter
+    const tableMargin = 20;
+    const shadowOffset = 3;
+    const cornerRadius = 5;
+
+    // Generate table - improved styling with borders
     autoTable(doc, {
       startY: yPosition,
       head: [headers],
       body: rows,
       theme: "striped",
+      margin: { left: tableMargin, right: tableMargin },
       headStyles: {
-        fillColor: [47, 75, 255],
+        fillColor: [0, 51, 104], // #003368
         textColor: [255, 255, 255],
         fontStyle: "bold",
+        fontSize: 10,
+        halign: "center",
+        lineColor: [0, 51, 104], // Match header color for border
+        lineWidth: 0.5,
+      },
+      alternateRowStyles: {
+        fillColor: [249, 250, 251], // slate-50
+        lineColor: [203, 213, 225], // slate-300
+        lineWidth: 0.3,
       },
       styles: {
         fontSize: 9,
-        cellPadding: 3,
+        cellPadding: 4,
+        lineColor: [203, 213, 225], // slate-300 for better visibility
+        lineWidth: 0.5,
+        textColor: [31, 41, 55], // slate-800
       },
       columnStyles: {
-        0: { cellWidth: 25 },
+        0: { cellWidth: 30, halign: "left" },
+      },
+      didParseCell: function(data: any) {
+        // Color code balance values
+        if (data.column.index === headers.length - 1 && headers[headers.length - 1] === "Balance") {
+          const value = parseFloat(data.cell.text[0] || 0);
+          if (value < 0) {
+            data.cell.styles.textColor = [220, 38, 38]; // red-600
+          } else if (value > 0) {
+            data.cell.styles.textColor = [22, 163, 74]; // green-600
+          }
+        }
+        // Color code Cash In values
+        const cashInIndex = headers.indexOf("Cash In");
+        if (cashInIndex !== -1 && data.column.index === cashInIndex && data.cell.text[0] && parseFloat(data.cell.text[0]) > 0) {
+          data.cell.styles.textColor = [22, 163, 74]; // green-600
+        }
+        // Color code Cash Out values
+        const cashOutIndex = headers.indexOf("Cash Out");
+        if (cashOutIndex !== -1 && data.column.index === cashOutIndex && data.cell.text[0] && parseFloat(data.cell.text[0]) > 0) {
+          data.cell.styles.textColor = [220, 38, 38]; // red-600
+        }
+      },
+      didDrawPage: function(data: any) {
+        // Draw shadow and border after table is drawn
+        const table = (data as any).table;
+        if (table && table.finalY) {
+          const tableStartY = yPosition - 5;
+          const tableEndY = table.finalY + 5;
+          const tableWidth = pageWidth - (tableMargin * 2);
+          const tableHeight = tableEndY - tableStartY;
+
+          // Draw shadow behind table (offset to bottom-right for depth effect)
+          doc.setFillColor(0, 0, 0, 0.1); // Semi-transparent black for shadow
+          doc.rect(tableMargin + shadowOffset, tableStartY + shadowOffset, tableWidth, tableHeight, "F");
+
+          // Draw outer border with proper outline
+          doc.setDrawColor(148, 163, 184); // slate-400 for border
+          doc.setLineWidth(1.5);
+          
+          // Draw complete border rectangle around the table
+          doc.rect(tableMargin, tableStartY, tableWidth, tableHeight, "S");
+        }
       },
     });
 
-    // Footer
+    // Footer - improved design
     const finalY = (doc as any).lastAutoTable?.finalY || yPosition + 50;
-    if (finalY < pageHeight - 20) {
-      doc.setFillColor(47, 75, 255);
-      doc.rect(0, pageHeight - 20, pageWidth, 20, "F");
+    const footerY = pageHeight - 25;
+    if (finalY < footerY) {
+      doc.setFillColor(0, 51, 104); // #003368
+      doc.rect(0, footerY, pageWidth, 25, "F");
       
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(10);
       doc.setFont("helvetica", "normal");
-      doc.text("C", 15, pageHeight - 10);
-      doc.text("Generated by HissabBook App. Install Now", pageWidth / 2, pageHeight - 10, { align: "center" });
+      doc.text("Generated by HissabBook App. Install Now", pageWidth / 2, footerY + 12, { align: "center" });
     }
 
     return doc;
@@ -1102,12 +1351,15 @@ export default function BookDetailPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                     </svg>
                   </button>
-                  <button className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                    </svg>
-                    Add Bulk Entries
-                  </button>
+                  {/* Add Bulk Entries - Only show for managers/admins */}
+                  {(getUserRole() === "managers" || getUserRole() === "manager" || isAdmin()) && (
+                    <button className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                      Add Bulk Entries
+                    </button>
+                  )}
                   <div className="relative">
                     <button 
                       onClick={() => setShowReportsDropdown(!showReportsDropdown)}
@@ -1563,19 +1815,26 @@ export default function BookDetailPage() {
                   </div>
                   <div className="flex-1">
                     <p className="text-sm font-medium text-slate-600">Net Balance</p>
-                    <p className="text-2xl font-bold text-slate-900">
-                      {(
+                    {(() => {
+                      const netBalance = (
                         entries
                           .filter((e) => e.entry_type === "cash_in")
                           .reduce((sum, e) => sum + parseFloat(e.amount || 0), 0) -
                         entries
                           .filter((e) => e.entry_type === "cash_out")
                           .reduce((sum, e) => sum + parseFloat(e.amount || 0), 0)
-                      ).toLocaleString("en-IN", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </p>
+                      );
+                      return (
+                        <p className={`text-2xl font-bold ${
+                          netBalance >= 0 ? "text-green-600" : "text-red-600"
+                        }`}>
+                          {netBalance.toLocaleString("en-IN", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </p>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
@@ -1762,6 +2021,7 @@ export default function BookDetailPage() {
                         <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Mode</th>
                         <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Amount</th>
                         <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Balance</th>
+                        <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 bg-white">
@@ -1859,11 +2119,59 @@ export default function BookDetailPage() {
                                 maximumFractionDigits: 2,
                               })}
                             </td>
-                            <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-slate-900">
-                              {(book?.masterWalletBalance || 0).toLocaleString("en-IN", {
+                            <td className={`whitespace-nowrap px-4 py-3 text-right text-sm font-semibold ${(entry.balance || 0) < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                              {(entry.balance || 0).toLocaleString("en-IN", {
                                 minimumFractionDigits: 2,
                                 maximumFractionDigits: 2,
                               })}
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                              {userPermissions.includes("cashbooks.delete") && (
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    if (!confirm("Are you sure you want to delete this entry?")) return;
+                                    try {
+                                      const token = getAuthToken();
+                                      if (!token) {
+                                        alert("Not authenticated");
+                                        return;
+                                      }
+                                      const response = await fetch(`${API_BASE}/api/books/${bookId}/entries/${entry.id}`, {
+                                        method: "DELETE",
+                                        headers: {
+                                          Authorization: `Bearer ${token}`,
+                                        },
+                                      });
+                                      
+                                      if (!response.ok) {
+                                        const errorText = await response.text();
+                                        let errorData;
+                                        try {
+                                          errorData = JSON.parse(errorText);
+                                        } catch {
+                                          errorData = { message: errorText || `HTTP ${response.status}` };
+                                        }
+                                        throw new Error(errorData.message || "Failed to delete entry");
+                                      }
+                                      
+                                      const result = await response.json();
+                                      await fetchEntries();
+                                      alert(result.message || "Entry deleted successfully!");
+                                    } catch (err) {
+                                      console.error("Error deleting entry:", err);
+                                      alert(err instanceof Error ? err.message : "Failed to delete entry");
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 transition"
+                                  title="Delete entry"
+                                >
+                                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                  Delete
+                                </button>
+                              )}
                             </td>
                           </tr>
                         );
@@ -3772,97 +4080,103 @@ export default function BookDetailPage() {
 
               {/* Action Buttons */}
               <div className="sticky bottom-0 bg-white border-t border-slate-200 px-6 py-4 flex gap-3">
-                <button
-                  onClick={async () => {
-                    if (!confirm("Are you sure you want to delete this entry?")) return;
-                    try {
-                      const token = getAuthToken();
-                      if (!token) {
-                        alert("Not authenticated");
-                        return;
-                      }
-                      const response = await fetch(`${API_BASE}/api/books/${bookId}/entries/${selectedEntry.id}`, {
-                        method: "DELETE",
-                        headers: {
-                          Authorization: `Bearer ${token}`,
-                        },
-                      });
-                      
-                      if (!response.ok) {
-                        const errorText = await response.text();
-                        let errorData;
-                        try {
-                          errorData = JSON.parse(errorText);
-                        } catch {
-                          errorData = { message: errorText || `HTTP ${response.status}` };
+                {userPermissions.includes("cashbooks.delete") && (
+                  <button
+                    onClick={async () => {
+                      if (!confirm("Are you sure you want to delete this entry?")) return;
+                      try {
+                        const token = getAuthToken();
+                        if (!token) {
+                          alert("Not authenticated");
+                          return;
                         }
-                        throw new Error(errorData.message || "Failed to delete entry");
+                        const response = await fetch(`${API_BASE}/api/books/${bookId}/entries/${selectedEntry.id}`, {
+                          method: "DELETE",
+                          headers: {
+                            Authorization: `Bearer ${token}`,
+                          },
+                        });
+                        
+                        if (!response.ok) {
+                          const errorText = await response.text();
+                          let errorData;
+                          try {
+                            errorData = JSON.parse(errorText);
+                          } catch {
+                            errorData = { message: errorText || `HTTP ${response.status}` };
+                          }
+                          throw new Error(errorData.message || "Failed to delete entry");
+                        }
+                        
+                        const result = await response.json();
+                        setSelectedEntry(null);
+                        await fetchEntries();
+                        alert(result.message || "Entry deleted successfully!");
+                      } catch (err) {
+                        console.error("Error deleting entry:", err);
+                        alert(err instanceof Error ? err.message : "Failed to delete entry");
                       }
-                      
-                      const result = await response.json();
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-100 transition"
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    Delete
+                  </button>
+                )}
+                {(userPermissions.includes("cashbooks.update") || userPermissions.includes("cashbooks.delete")) && (
+                  <button
+                    onClick={() => {
+                      setShowMoreActionsModal(true);
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                    </svg>
+                    More Actions
+                  </button>
+                )}
+                {userPermissions.includes("cashbooks.update") && (
+                  <button
+                    onClick={() => {
+                      setEditingEntry(selectedEntry);
+                      setEntryType(selectedEntry.entry_type);
+                      // Pre-fill form with entry data
+                      const entryDate = new Date(selectedEntry.entry_date);
+                      const entryTime = selectedEntry.entry_time ? selectedEntry.entry_time.split(':') : ['00', '00'];
+                      setSelectedDate(entryDate);
+                      setSelectedTime(new Date(entryDate.setHours(parseInt(entryTime[0]), parseInt(entryTime[1]))));
+                      setFormData({
+                        date: entryDate.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+                        time: selectedEntry.entry_time ? `${entryTime[0]}:${entryTime[1]}` : new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }),
+                        amount: selectedEntry.amount || "",
+                        partyName: selectedEntry.party_name || "",
+                        remarks: selectedEntry.remarks || "",
+                        category: selectedEntry.category_name || "",
+                        paymentMode: selectedEntry.payment_mode || "Cash",
+                      });
+                      setPartySearch(selectedEntry.party_name || "");
+                      setCategorySearch(selectedEntry.category_name || "");
+                      setPaymentModeSearch(selectedEntry.payment_mode || "Cash");
+                      setSelectedParty(selectedEntry.party_id || null);
+                      setSelectedCategory(selectedEntry.category_id || null);
+                      // Load attachments if any
+                      if (selectedEntry.attachments && selectedEntry.attachments.length > 0) {
+                        // TODO: Load existing attachments
+                      }
+                      setShowCashEntryModal(true);
                       setSelectedEntry(null);
-                      await fetchEntries();
-                      alert(result.message || "Entry deleted successfully!");
-                    } catch (err) {
-                      console.error("Error deleting entry:", err);
-                      alert(err instanceof Error ? err.message : "Failed to delete entry");
-                    }
-                  }}
-                  className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-100 transition"
-                >
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                  Delete
-                </button>
-                <button
-                  onClick={() => {
-                    setShowMoreActionsModal(true);
-                  }}
-                  className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
-                >
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                  </svg>
-                  More Actions
-                </button>
-                <button
-                  onClick={() => {
-                    setEditingEntry(selectedEntry);
-                    setEntryType(selectedEntry.entry_type);
-                    // Pre-fill form with entry data
-                    const entryDate = new Date(selectedEntry.entry_date);
-                    const entryTime = selectedEntry.entry_time ? selectedEntry.entry_time.split(':') : ['00', '00'];
-                    setSelectedDate(entryDate);
-                    setSelectedTime(new Date(entryDate.setHours(parseInt(entryTime[0]), parseInt(entryTime[1]))));
-                    setFormData({
-                      date: entryDate.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
-                      time: selectedEntry.entry_time ? `${entryTime[0]}:${entryTime[1]}` : new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }),
-                      amount: selectedEntry.amount || "",
-                      partyName: selectedEntry.party_name || "",
-                      remarks: selectedEntry.remarks || "",
-                      category: selectedEntry.category_name || "",
-                      paymentMode: selectedEntry.payment_mode || "Cash",
-                    });
-                    setPartySearch(selectedEntry.party_name || "");
-                    setCategorySearch(selectedEntry.category_name || "");
-                    setPaymentModeSearch(selectedEntry.payment_mode || "Cash");
-                    setSelectedParty(selectedEntry.party_id || null);
-                    setSelectedCategory(selectedEntry.category_id || null);
-                    // Load attachments if any
-                    if (selectedEntry.attachments && selectedEntry.attachments.length > 0) {
-                      // TODO: Load existing attachments
-                    }
-                    setShowCashEntryModal(true);
-                    setSelectedEntry(null);
-                  }}
-                  className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-[#2f4bff] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#2f4bff]/90 transition"
-                >
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                  Edit
-                </button>
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-[#2f4bff] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#2f4bff]/90 transition"
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    Edit
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -4096,7 +4410,9 @@ export default function BookDetailPage() {
                         </div>
                         <div>
                           <p className="text-sm text-slate-600">{exportFilterType !== "all" ? "Net Balance" : "Final Balance"}</p>
-                          <p className="text-lg font-semibold text-[#1f2937]">{reportData.summary?.finalBalance || 0}</p>
+                          <p className={`text-lg font-semibold ${
+                            parseFloat(reportData.summary?.finalBalance || 0) >= 0 ? "text-green-600" : "text-red-600"
+                          }`}>{reportData.summary?.finalBalance || 0}</p>
                         </div>
                       </div>
 
@@ -4167,11 +4483,22 @@ export default function BookDetailPage() {
                                       {exportFilterType === "day" && (
                                         <>
                                           <td className="py-2 px-3 text-slate-700">
-                                            {new Date(entry.entry_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                                            <div>
+                                              {new Date(entry.entry_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                                              {entry.entry_time && (() => {
+                                                const timeStr = entry.entry_time.substring(0, 5); // Get HH:MM
+                                                const [hours, minutes] = timeStr.split(':');
+                                                const hour24 = parseInt(hours);
+                                                const hour12 = hour24 === 0 ? 12 : hour24 > 12 ? hour24 - 12 : hour24;
+                                                const ampm = hour24 >= 12 ? 'PM' : 'AM';
+                                                const formattedTime = `${hour12.toString().padStart(2, '0')}:${minutes} ${ampm}`;
+                                                return <div className="text-xs text-slate-500">{formattedTime}</div>;
+                                              })()}
+                                            </div>
                                           </td>
                                           <td className="py-2 px-3 text-right text-green-600">{entry.cash_in || 0}</td>
                                           <td className="py-2 px-3 text-right text-red-600">{entry.cash_out || 0}</td>
-                                          <td className="py-2 px-3 text-right text-slate-700">{entry.balance || 0}</td>
+                                          <td className={`py-2 px-3 text-right ${(entry.balance || 0) < 0 ? 'text-red-600' : 'text-green-600'}`}>{entry.balance || 0}</td>
                                         </>
                                       )}
                                       {exportFilterType === "party" && (
@@ -4179,7 +4506,7 @@ export default function BookDetailPage() {
                                           <td className="py-2 px-3 text-slate-700">{entry.party_name || "-"}</td>
                                           <td className="py-2 px-3 text-right text-green-600">{entry.cash_in || 0}</td>
                                           <td className="py-2 px-3 text-right text-red-600">{entry.cash_out || 0}</td>
-                                          <td className="py-2 px-3 text-right text-slate-700">{entry.balance || 0}</td>
+                                          <td className={`py-2 px-3 text-right ${(entry.balance || 0) < 0 ? 'text-red-600' : 'text-green-600'}`}>{entry.balance || 0}</td>
                                         </>
                                       )}
                                       {exportFilterType === "category" && (
@@ -4187,7 +4514,7 @@ export default function BookDetailPage() {
                                           <td className="py-2 px-3 text-slate-700">{entry.category_name || "-"}</td>
                                           <td className="py-2 px-3 text-right text-green-600">{entry.cash_in || 0}</td>
                                           <td className="py-2 px-3 text-right text-red-600">{entry.cash_out || 0}</td>
-                                          <td className="py-2 px-3 text-right text-slate-700">{entry.balance || 0}</td>
+                                          <td className={`py-2 px-3 text-right ${(entry.balance || 0) < 0 ? 'text-red-600' : 'text-green-600'}`}>{entry.balance || 0}</td>
                                         </>
                                       )}
                                       {exportFilterType === "payment_mode" && (
@@ -4195,7 +4522,7 @@ export default function BookDetailPage() {
                                           <td className="py-2 px-3 text-slate-700">{entry.payment_mode || "-"}</td>
                                           <td className="py-2 px-3 text-right text-green-600">{entry.cash_in || 0}</td>
                                           <td className="py-2 px-3 text-right text-red-600">{entry.cash_out || 0}</td>
-                                          <td className="py-2 px-3 text-right text-slate-700">{entry.balance || 0}</td>
+                                          <td className={`py-2 px-3 text-right ${(entry.balance || 0) < 0 ? 'text-red-600' : 'text-green-600'}`}>{entry.balance || 0}</td>
                                         </>
                                       )}
                                     </tr>
@@ -4205,11 +4532,28 @@ export default function BookDetailPage() {
                                   return (
                                     <tr key={entry.id || index} className="border-b border-slate-100">
                                       <td className="py-2 px-3 text-slate-700">
-                                        {new Date(entry.entry_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                                        <div>
+                                          {new Date(entry.entry_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                                          {entry.entry_time && (() => {
+                                            const timeStr = entry.entry_time.substring(0, 5); // Get HH:MM
+                                            const [hours, minutes] = timeStr.split(':');
+                                            const hour24 = parseInt(hours);
+                                            const hour12 = hour24 === 0 ? 12 : hour24 > 12 ? hour24 - 12 : hour24;
+                                            const ampm = hour24 >= 12 ? 'PM' : 'AM';
+                                            const formattedTime = `${hour12.toString().padStart(2, '0')}:${minutes} ${ampm}`;
+                                            return <div className="text-xs text-slate-500">{formattedTime}</div>;
+                                          })()}
+                                        </div>
                                       </td>
                                       <td className="py-2 px-3 text-slate-700">
                                         <div className="flex items-center gap-1">
-                                          {entry.remarks || "-"}
+                                          {(() => {
+                                            const remarks = entry.remarks || "-";
+                                            if (remarks === "-" || remarks.length <= 10) {
+                                              return remarks;
+                                            }
+                                            return remarks.substring(0, 10) + "...";
+                                          })()}
                                           {entry.hasAttachment && (
                                             <svg className="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                                               <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -4227,7 +4571,7 @@ export default function BookDetailPage() {
                                         {entry.entry_type === "cash_out" ? entry.amount : ""}
                                       </td>
                                       <td className="py-2 px-3 text-slate-700">{entry.created_by_name || "-"}</td>
-                                      <td className="py-2 px-3 text-right text-slate-700">{entry.balance || 0}</td>
+                                      <td className={`py-2 px-3 text-right ${(entry.balance || 0) < 0 ? 'text-red-600' : 'text-green-600'}`}>{entry.balance || 0}</td>
                                     </tr>
                                   );
                                 }

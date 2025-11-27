@@ -7,6 +7,11 @@ import { useEffect, useMemo, useState } from "react";
 import OTPLoginForm from "./components/OTPLoginForm";
 import EmailPasswordLoginForm from "./components/EmailPasswordLoginForm";
 
+const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") || 
+  (typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "http://localhost:5000"
+    : "/backend");
+
 const slides = [
   {
     title: "Understand your business health",
@@ -34,6 +39,7 @@ const slides = [
 export default function LoginPage() {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [loginMethod, setLoginMethod] = useState<"otp" | "email">("otp");
+  const [smallLogoUrl, setSmallLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -41,6 +47,28 @@ export default function LoginPage() {
     }, 6000);
 
     return () => clearInterval(timer);
+  }, []);
+
+  // Fetch small logo from site settings
+  useEffect(() => {
+    const fetchSmallLogo = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/settings/site/public`);
+        if (response.ok) {
+          const siteSettings = await response.json();
+          if (siteSettings.smallLogoUrl) {
+            const logoUrl = siteSettings.smallLogoUrl.startsWith('http') 
+              ? siteSettings.smallLogoUrl 
+              : `${API_BASE}/uploads/${siteSettings.smallLogoUrl}`;
+            setSmallLogoUrl(logoUrl);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to fetch small logo:", err);
+        // Continue without logo - will show fallback
+      }
+    };
+    fetchSmallLogo();
   }, []);
 
   const slide = useMemo(() => slides[currentSlide], [currentSlide]);
@@ -57,14 +85,32 @@ export default function LoginPage() {
     <div className="min-h-screen bg-white font-sans text-slate-900">
       <div className="flex min-h-screen flex-col lg:flex-row">
         <section className="flex w-full flex-1 flex-col bg-[#edf1ff] px-8 pb-12 pt-10 lg:w-1/2 lg:px-16 lg:pb-16 lg:pt-14">
-          <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-lg font-bold text-[#2357FF] shadow-sm">
-              C
-            </span>
-            <span className="text-xl font-semibold text-[#2357FF]">
-              HissabBook
-            </span>
-          </div>
+          <Link href="/" className="flex items-center gap-3 transition-transform hover:scale-105">
+            {smallLogoUrl ? (
+              <img
+                src={smallLogoUrl}
+                alt="HissabBook"
+                className="h-[68px] w-auto object-contain cursor-pointer"
+                onError={(e) => {
+                  // Fallback to default logo if image fails to load
+                  e.currentTarget.style.display = 'none';
+                  const parent = e.currentTarget.parentElement;
+                  if (parent) {
+                    const fallback = parent.querySelector('.logo-fallback');
+                    if (fallback) fallback.classList.remove('hidden');
+                  }
+                }}
+              />
+            ) : null}
+            <div className={`logo-fallback flex items-center gap-3 ${smallLogoUrl ? 'hidden' : ''}`}>
+              <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-lg font-bold text-[#2357FF] shadow-sm">
+                C
+              </span>
+              <span className="text-xl font-semibold text-[#2357FF]">
+                HissabBook
+              </span>
+            </div>
+          </Link>
 
           <div className="flex flex-1 flex-col items-center justify-center gap-10 pt-10 lg:pt-0">
             <div className="relative w-full max-w-md overflow-hidden rounded-[40px] shadow-[0_35px_90px_rgba(35,87,255,0.18)]">
@@ -139,9 +185,29 @@ export default function LoginPage() {
         <section className="flex flex-1 items-center justify-center px-6 py-10 lg:px-24 lg:py-16">
           <div className="w-full max-w-sm space-y-8">
             <div className="space-y-2 text-center">
-              <h1 className="text-2xl font-semibold text-slate-900">
-                Welcome to HissabBook <span className="inline-block">👋</span>
-              </h1>
+              {smallLogoUrl ? (
+                <Link href="/" className="flex justify-center mb-4 transition-transform hover:scale-105">
+                  <img
+                    src={smallLogoUrl}
+                    alt="HissabBook"
+                    className="h-[68px] w-auto object-contain cursor-pointer"
+                    onError={(e) => {
+                      // Fallback to default text if image fails to load
+                      e.currentTarget.style.display = 'none';
+                      const parent = e.currentTarget.parentElement?.parentElement;
+                      if (parent) {
+                        const fallback = parent.querySelector('.welcome-fallback');
+                        if (fallback) fallback.classList.remove('hidden');
+                      }
+                    }}
+                  />
+                </Link>
+              ) : null}
+              <div className={`welcome-fallback ${smallLogoUrl ? 'hidden' : ''}`}>
+                <h1 className="text-2xl font-semibold text-slate-900">
+                  Welcome to HissabBook <span className="inline-block">👋</span>
+                </h1>
+              </div>
               <p className="text-sm text-slate-500">
                 Login/Register to HissabBook
               </p>

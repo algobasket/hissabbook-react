@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import AppShell from "../components/AppShell";
 import ProtectedRoute from "../components/ProtectedRoute";
-import { getAuthToken } from "../utils/auth";
+import { getAuthToken, fetchUserPermissions } from "../utils/auth";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ||
@@ -68,10 +68,12 @@ export default function AccountInfoPage() {
   const [newEmail, setNewEmail] = useState("");
   const [changingEmail, setChangingEmail] = useState(false);
   const [sendingVerificationEmail, setSendingVerificationEmail] = useState(false);
+  const [userPermissions, setUserPermissions] = useState<string[]>([]);
 
-  // Fetch account details on mount
+  // Fetch account details and permissions on mount
   useEffect(() => {
     fetchAccountDetails();
+    fetchUserPermissions().then(setUserPermissions);
   }, []);
 
   const fetchAccountDetails = async () => {
@@ -432,7 +434,7 @@ export default function AccountInfoPage() {
                 Keep your payout account information accurate and verified.
               </p>
             </div>
-            {!isEditing && (
+            {!isEditing && userPermissions.includes("accounts.edit_info") && (
               <button
                 onClick={handleEdit}
                 className="rounded-xl border border-[#2f4bff] bg-white px-4 py-2 text-sm font-semibold text-[#2f4bff] transition hover:bg-[#2f4bff]/10"
@@ -460,9 +462,9 @@ export default function AccountInfoPage() {
                 <label className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">
                   Email Address
                 </label>
-                {!showChangeEmail && (
+                {!showChangeEmail && (userPermissions.includes("accounts.change_email") || userPermissions.includes("accounts.verify_email")) && (
                   <div className="flex items-center gap-3">
-                    {!accountDetails.isEmailVerified && (
+                    {!accountDetails.isEmailVerified && userPermissions.includes("accounts.verify_email") && (
                       <button
                         onClick={handleSendVerificationEmail}
                         disabled={sendingVerificationEmail}
@@ -471,21 +473,23 @@ export default function AccountInfoPage() {
                         {sendingVerificationEmail ? "Sending..." : "Verify Email"}
                       </button>
                     )}
-                    <button
-                      onClick={() => {
-                        setShowChangeEmail(true);
-                        setNewEmail("");
-                        setError(null);
-                        setSuccess(null);
-                      }}
-                      className="text-xs font-semibold text-[#2f4bff] hover:underline"
-                    >
-                      Change Email
-                    </button>
+                    {userPermissions.includes("accounts.change_email") && (
+                      <button
+                        onClick={() => {
+                          setShowChangeEmail(true);
+                          setNewEmail("");
+                          setError(null);
+                          setSuccess(null);
+                        }}
+                        className="text-xs font-semibold text-[#2f4bff] hover:underline"
+                      >
+                        Change Email
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
-              {showChangeEmail ? (
+              {showChangeEmail && userPermissions.includes("accounts.change_email") ? (
                 <div className="mt-2 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <div>
                     <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-slate-400 mb-2">
@@ -634,34 +638,35 @@ export default function AccountInfoPage() {
               </p>
             </div>
 
-            {/* Change Password Section */}
-            <div className="border-t border-slate-200 pt-5">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <label className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">
-                    Password
-                  </label>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Change your account password
-                  </p>
+            {/* Change Password Section - Only show if user has permission */}
+            {userPermissions.includes("accounts.change_password") && (
+              <div className="border-t border-slate-200 pt-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">
+                      Password
+                    </label>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Change your account password
+                    </p>
+                  </div>
+                  {!showChangePassword && (
+                    <button
+                      onClick={() => {
+                        setShowChangePassword(true);
+                        setError(null);
+                        setSuccess(null);
+                        setPasswordData({
+                          newPassword: "",
+                          confirmPassword: "",
+                        });
+                      }}
+                      className="rounded-xl border border-[#2f4bff] bg-white px-4 py-2 text-sm font-semibold text-[#2f4bff] transition hover:bg-[#2f4bff]/10"
+                    >
+                      Change Password
+                    </button>
+                  )}
                 </div>
-                {!showChangePassword && (
-                  <button
-                    onClick={() => {
-                      setShowChangePassword(true);
-                      setError(null);
-                      setSuccess(null);
-                      setPasswordData({
-                        newPassword: "",
-                        confirmPassword: "",
-                      });
-                    }}
-                    className="rounded-xl border border-[#2f4bff] bg-white px-4 py-2 text-sm font-semibold text-[#2f4bff] transition hover:bg-[#2f4bff]/10"
-                  >
-                    Change Password
-                  </button>
-                )}
-              </div>
 
               {showChangePassword && (
                 <div className="mt-4 space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -724,7 +729,8 @@ export default function AccountInfoPage() {
                   </div>
                 </div>
               )}
-            </div>
+              </div>
+            )}
 
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-6">
               <div className="flex-1">

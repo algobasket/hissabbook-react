@@ -84,6 +84,72 @@ export function canAccessAdmin(): boolean {
   return isAdmin();
 }
 
+// Permission checking functions
+let cachedPermissions: string[] | null = null;
+let permissionsCacheTime: number = 0;
+const PERMISSIONS_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+export async function fetchUserPermissions(): Promise<string[]> {
+  const now = Date.now();
+  // Return cached permissions if still valid
+  if (cachedPermissions && (now - permissionsCacheTime) < PERMISSIONS_CACHE_DURATION) {
+    return cachedPermissions || [];
+  }
+
+  const token = getAuthToken();
+  if (!token) {
+    return [];
+  }
+
+  const API_BASE =
+    process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ||
+    (typeof window !== "undefined" && window.location.hostname === "localhost"
+      ? "http://localhost:5000"
+      : "/backend");
+
+  try {
+    const response = await fetch(`${API_BASE}/api/users/me/permissions`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      console.error("Failed to fetch user permissions");
+      return [];
+    }
+
+    const data = await response.json();
+    cachedPermissions = data.permissions || [];
+    permissionsCacheTime = now;
+    return cachedPermissions || [];
+  } catch (error) {
+    console.error("Error fetching user permissions:", error);
+    return [];
+  }
+}
+
+export function clearPermissionsCache(): void {
+  cachedPermissions = null;
+  permissionsCacheTime = 0;
+}
+
+export async function hasPermission(permissionCode: string): Promise<boolean> {
+  const permissions = await fetchUserPermissions();
+  return permissions.includes(permissionCode);
+}
+
+// Synchronous check using cached permissions (may return false if not cached yet)
+export function hasPermissionSync(permissionCode: string): boolean {
+  if (!cachedPermissions) {
+    // If not cached, return false and trigger async fetch
+    fetchUserPermissions();
+    return false;
+  }
+  return cachedPermissions.includes(permissionCode);
+}
+
 
 
 

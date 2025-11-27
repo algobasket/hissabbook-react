@@ -38,6 +38,10 @@ function AddNewBookContent() {
   });
   const [paymentCurrency, setPaymentCurrency] = useState<string>("INR");
   const [loadingCurrency, setLoadingCurrency] = useState(true);
+  const [staffMembers, setStaffMembers] = useState<Array<{ id: string; email: string; phone: string; type: "email" | "phone" }>>([]);
+  const [newStaffEmail, setNewStaffEmail] = useState("");
+  const [newStaffPhone, setNewStaffPhone] = useState("");
+  const [staffInputType, setStaffInputType] = useState<"email" | "phone">("email");
 
   useEffect(() => {
     // Get current user from localStorage
@@ -144,6 +148,161 @@ function AddNewBookContent() {
     }));
   };
 
+  const handleAddStaffMember = () => {
+    if (staffInputType === "email") {
+      if (!newStaffEmail.trim() || !newStaffEmail.includes("@")) {
+        setError("Please enter a valid email address");
+        return;
+      }
+      const email = newStaffEmail.trim().toLowerCase();
+      if (staffMembers.some((s) => s.email === email)) {
+        setError("This email is already added");
+        return;
+      }
+      setStaffMembers((prev) => [
+        ...prev,
+        { id: Date.now().toString(), email, phone: "", type: "email" },
+      ]);
+      setNewStaffEmail("");
+    } else {
+      if (!newStaffPhone.trim()) {
+        setError("Please enter a valid phone number");
+        return;
+      }
+      const phone = newStaffPhone.trim();
+      if (staffMembers.some((s) => s.phone === phone)) {
+        setError("This phone number is already added");
+        return;
+      }
+      setStaffMembers((prev) => [
+        ...prev,
+        { id: Date.now().toString(), email: "", phone, type: "phone" },
+      ]);
+      setNewStaffPhone("");
+    }
+    setError(null);
+  };
+
+  const handleRemoveStaffMember = (id: string) => {
+    setStaffMembers((prev) => prev.filter((s) => s.id !== id));
+  };
+
+  const addStaffMembersToBook = async (bookId: string, businessId?: string) => {
+    const token = getAuthToken();
+    if (!token) {
+      throw new Error("Not authenticated");
+    }
+
+    // Use businessId from formData if not provided
+    const effectiveBusinessId = businessId || formData.businessId;
+
+    const results: Array<{ staff: string; success: boolean; message: string }> = [];
+
+    for (const staff of staffMembers) {
+      try {
+        const staffIdentifier = staff.type === "email" ? staff.email : staff.phone;
+        
+        // Check if user exists
+        const params = new URLSearchParams();
+        if (staff.type === "email" && staff.email) {
+          params.append("email", staff.email);
+        } else if (staff.type === "phone" && staff.phone) {
+          params.append("phone", staff.phone);
+        }
+
+        const checkResponse = await fetch(`${API_BASE}/api/users/check?${params.toString()}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        });
+
+        if (!checkResponse.ok) {
+          throw new Error(`Failed to check if user exists: ${checkResponse.statusText}`);
+        }
+
+        const checkData = await checkResponse.json();
+        
+        if (checkData.exists && checkData.user?.id) {
+          // User exists, add them to the book
+          const addResponse = await fetch(`${API_BASE}/api/books/${bookId}/users`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              userId: checkData.user.id,
+            }),
+          });
+
+          if (addResponse.ok) {
+            results.push({
+              staff: staffIdentifier,
+              success: true,
+              message: `Added ${staffIdentifier} to the book`,
+            });
+          } else {
+            const errorData = await addResponse.json().catch(() => ({}));
+            throw new Error(errorData.message || `Failed to add ${staffIdentifier} to book`);
+          }
+        } else {
+          // User doesn't exist, send invite
+          if (!effectiveBusinessId) {
+            throw new Error(
+              `Cannot send invite to ${staffIdentifier}. The book needs to be associated with a business to send invites.`
+            );
+          }
+
+          const inviteData: any = {
+            role: "Staff",
+            businessId: effectiveBusinessId,
+            cashbookId: bookId, // Pass book ID so user can be added to book on acceptance
+          };
+
+          if (staff.type === "email" && staff.email) {
+            inviteData.email = staff.email.trim();
+          } else if (staff.type === "phone" && staff.phone) {
+            inviteData.phone = staff.phone.trim();
+          }
+
+          const inviteResponse = await fetch(`${API_BASE}/api/businesses/${effectiveBusinessId}/invites`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(inviteData),
+          });
+
+          if (inviteResponse.ok) {
+            const inviteData = await inviteResponse.json();
+            results.push({
+              staff: staffIdentifier,
+              success: true,
+              message: `Invite sent to ${staffIdentifier}`,
+            });
+          } else {
+            const errorData = await inviteResponse.json().catch(() => ({}));
+            throw new Error(errorData.message || `Failed to send invite to ${staffIdentifier}`);
+          }
+        }
+      } catch (err) {
+        const staffIdentifier = staff.type === "email" ? staff.email : staff.phone;
+        const errorMessage = err instanceof Error ? err.message : `Failed to process ${staffIdentifier}`;
+        results.push({
+          staff: staffIdentifier,
+          success: false,
+          message: errorMessage,
+        });
+        console.error(`Error processing staff member ${staffIdentifier}:`, err);
+      }
+    }
+
+    // Return results for user feedback
+    return results;
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
@@ -189,15 +348,71 @@ function AddNewBookContent() {
 
       const data = await response.json();
       const bookId = data.book?.id;
+      let createdBook = data.book;
+      let bookBusinessId = createdBook?.businessId || createdBook?.business_id || formData.businessId;
 
-      setSuccess(true);
+      // If businessId is not in response, fetch the book to get it
+      if (bookId && !bookBusinessId && staffMembers.length > 0) {
+        try {
+          const bookResponse = await fetch(`${API_BASE}/api/books/${bookId}`, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          });
+          if (bookResponse.ok) {
+            const bookData = await bookResponse.json();
+            createdBook = bookData.book;
+            bookBusinessId = createdBook?.businessId || createdBook?.business_id || formData.businessId;
+          }
+        } catch (err) {
+          console.warn("Could not fetch book details, using formData businessId");
+        }
+      }
+
+      // Add staff members if any
+      let staffResults: Array<{ staff: string; success: boolean; message: string }> = [];
+      if (bookId && staffMembers.length > 0) {
+        // Warn if no businessId and we have staff to add (some might need invites)
+        if (!bookBusinessId) {
+          console.warn("Book created without businessId. Staff members that don't exist in the system cannot receive invites.");
+        }
+        
+        try {
+          staffResults = await addStaffMembersToBook(bookId, bookBusinessId);
+          
+          // Check if there were any failures
+          const failures = staffResults.filter((r) => !r.success);
+          const successes = staffResults.filter((r) => r.success);
+          
+          if (failures.length > 0 && successes.length > 0) {
+            // Partial success
+            const failureMessages = failures.map((f) => `${f.staff}: ${f.message}`).join("; ");
+            setError(`Book created successfully! ${successes.length} staff member(s) processed. However, some had issues: ${failureMessages}`);
+          } else if (failures.length > 0) {
+            // All failed
+            const failureMessages = failures.map((f) => `${f.staff}: ${f.message}`).join("; ");
+            setError(`Book created successfully, but staff members had issues: ${failureMessages}`);
+          } else if (successes.length > 0) {
+            // All succeeded
+            setSuccess(true);
+          }
+        } catch (staffError) {
+          console.error("Error adding staff members:", staffError);
+          const errorMessage = staffError instanceof Error ? staffError.message : "Unknown error";
+          setError(`Book created successfully, but there was an error processing staff members: ${errorMessage}`);
+        }
+      } else {
+        setSuccess(true);
+      }
+
       setTimeout(() => {
         if (bookId) {
           router.push(`/cashbooks/${bookId}/settings/members`);
         } else {
           router.push("/cashbooks");
         }
-      }, 1500);
+      }, staffMembers.length > 0 ? 3000 : 1500);
     } catch (err) {
       console.error("Error creating book:", err);
       const errorMessage = err instanceof Error ? err.message : "Failed to create book";
@@ -306,6 +521,103 @@ function AddNewBookContent() {
                     This book will be owned by you
                   </p>
                 </div>
+              </div>
+
+              {/* Add Staff Members Section */}
+              <div className="space-y-4 pt-4 border-t border-slate-200">
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-[#1f2937]">
+                    Add Staff Members
+                  </label>
+                  <p className="text-xs text-slate-500">
+                    Optionally add staff members by email or phone number. Existing users will be added immediately, new users will receive an invite.
+                  </p>
+                </div>
+
+                <div className="flex gap-2">
+                  <div className="flex-1 flex gap-2">
+                    <select
+                      value={staffInputType}
+                      onChange={(e) => {
+                        setStaffInputType(e.target.value as "email" | "phone");
+                        setNewStaffEmail("");
+                        setNewStaffPhone("");
+                      }}
+                      className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-[#1f2937] focus:border-[#2f4bff] focus:outline-none focus:ring-2 focus:ring-[#2f4bff]/20"
+                      disabled={loading}
+                    >
+                      <option value="email">Email</option>
+                      <option value="phone">Phone</option>
+                    </select>
+                    {staffInputType === "email" ? (
+                      <input
+                        type="email"
+                        value={newStaffEmail}
+                        onChange={(e) => setNewStaffEmail(e.target.value)}
+                        onKeyPress={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleAddStaffMember();
+                          }
+                        }}
+                        placeholder="Enter email address"
+                        className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-[#1f2937] focus:border-[#2f4bff] focus:outline-none focus:ring-2 focus:ring-[#2f4bff]/20"
+                        disabled={loading}
+                      />
+                    ) : (
+                      <input
+                        type="tel"
+                        value={newStaffPhone}
+                        onChange={(e) => setNewStaffPhone(e.target.value)}
+                        onKeyPress={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleAddStaffMember();
+                          }
+                        }}
+                        placeholder="Enter phone number"
+                        className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-[#1f2937] focus:border-[#2f4bff] focus:outline-none focus:ring-2 focus:ring-[#2f4bff]/20"
+                        disabled={loading}
+                      />
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddStaffMember}
+                    className="rounded-2xl bg-[#2f4bff] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2f4bff]/90 disabled:opacity-60"
+                    disabled={loading || (staffInputType === "email" ? !newStaffEmail.trim() : !newStaffPhone.trim())}
+                  >
+                    Add
+                  </button>
+                </div>
+
+                {staffMembers.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-slate-600">Staff Members to Add:</p>
+                    <div className="space-y-2">
+                      {staffMembers.map((staff) => (
+                        <div
+                          key={staff.id}
+                          className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-2"
+                        >
+                          <span className="text-sm font-medium text-[#1f2937]">
+                            {staff.type === "email" ? staff.email : staff.phone}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveStaffMember(staff.id)}
+                            className="rounded-lg p-1 text-slate-400 hover:bg-slate-200 hover:text-rose-600 transition"
+                            disabled={loading}
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-4 pt-4">

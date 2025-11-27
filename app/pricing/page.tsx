@@ -1,13 +1,41 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Footer from "../components/Footer";
+
+const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") || 
+  (typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "http://localhost:5000"
+    : "/backend");
 
 export default function PricingPage() {
   const [monthlySpend, setMonthlySpend] = useState("");
   const [activeWallets, setActiveWallets] = useState("");
   const [estimatedCost, setEstimatedCost] = useState<number | null>(null);
+  const [smallLogoUrl, setSmallLogoUrl] = useState<string | null>(null);
+
+  // Fetch small logo from site settings
+  useEffect(() => {
+    const fetchSmallLogo = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/settings/site/public`);
+        if (response.ok) {
+          const siteSettings = await response.json();
+          if (siteSettings.smallLogoUrl) {
+            const logoUrl = siteSettings.smallLogoUrl.startsWith('http') 
+              ? siteSettings.smallLogoUrl 
+              : `${API_BASE}/uploads/${siteSettings.smallLogoUrl}`;
+            setSmallLogoUrl(logoUrl);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to fetch small logo:", err);
+        // Continue without logo - will show fallback
+      }
+    };
+    fetchSmallLogo();
+  }, []);
 
   const calculateCost = () => {
     const spend = parseFloat(monthlySpend.replace(/[₹,\s]/g, "")) || 0;
@@ -63,12 +91,30 @@ export default function PricingPage() {
             href="/"
             className="flex items-center gap-2 transition-transform hover:scale-105"
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-lg font-bold text-primary">
-              H
-            </span>
-            <span className="text-xl font-semibold text-slate-900">
-              HissabBook
-            </span>
+            {smallLogoUrl ? (
+              <img
+                src={smallLogoUrl}
+                alt="HissabBook"
+                className="h-[68px] w-auto object-contain cursor-pointer"
+                onError={(e) => {
+                  // Fallback to default logo if image fails to load
+                  e.currentTarget.style.display = 'none';
+                  const parent = e.currentTarget.parentElement;
+                  if (parent) {
+                    const fallback = parent.querySelector('.logo-fallback');
+                    if (fallback) fallback.classList.remove('hidden');
+                  }
+                }}
+              />
+            ) : null}
+            <div className={`logo-fallback flex items-center gap-2 ${smallLogoUrl ? 'hidden' : ''}`}>
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-lg font-bold text-primary">
+                H
+              </span>
+              <span className="text-xl font-semibold text-slate-900">
+                HissabBook
+              </span>
+            </div>
           </Link>
           <nav className="hidden items-center gap-8 text-sm font-medium text-slate-500 lg:flex">
             <Link

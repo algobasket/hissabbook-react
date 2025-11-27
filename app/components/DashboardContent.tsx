@@ -197,8 +197,16 @@ export default function DashboardContent() {
 
             // Sort by date and get recent 5
             allEntries.sort((a, b) => {
-              const dateA = new Date(`${a.entry_date}T${a.entry_time || "00:00:00"}`);
-              const dateB = new Date(`${b.entry_date}T${b.entry_time || "00:00:00"}`);
+              const getDate = (entry: any) => {
+                if (!entry.entry_date) return new Date(0); // Use epoch if no date
+                const dateStr = entry.entry_date.includes('T') 
+                  ? entry.entry_date 
+                  : `${entry.entry_date}T${entry.entry_time || "00:00:00"}`;
+                const date = new Date(dateStr);
+                return isNaN(date.getTime()) ? new Date(0) : date; // Use epoch if invalid
+              };
+              const dateA = getDate(a);
+              const dateB = getDate(b);
               return dateB.getTime() - dateA.getTime();
             });
 
@@ -463,11 +471,57 @@ export default function DashboardContent() {
             <div className="mt-6 space-y-4">
               {recentEntries.length > 0 ? (
                 recentEntries.map((entry, index) => {
-                  const entryDate = new Date(`${entry.entry_date}T${entry.entry_time || "00:00:00"}`);
-                  const isToday = entryDate.toDateString() === new Date().toDateString();
-                  const timeStr = isToday
-                    ? `Today • ${entryDate.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })}`
-                    : entryDate.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+                  // Safely parse date with validation
+                  let entryDate: Date;
+                  let timeStr = "Date not available";
+                  
+                  if (entry.entry_date) {
+                    try {
+                      // entry_date is in YYYY-MM-DD format, entry_time is in HH:MM:SS format
+                      let dateStr = entry.entry_date;
+                      
+                      // If entry_date already includes time (ISO format), use it directly
+                      if (dateStr.includes('T')) {
+                        entryDate = new Date(dateStr);
+                      } else {
+                        // Combine date and time
+                        const timePart = entry.entry_time || "00:00:00";
+                        // Ensure time is in HH:MM:SS format
+                        const timeParts = timePart.split(':');
+                        const formattedTime = timeParts.length === 2 
+                          ? `${timePart}:00` 
+                          : timePart;
+                        dateStr = `${entry.entry_date}T${formattedTime}`;
+                        entryDate = new Date(dateStr);
+                      }
+                      
+                      // Check if date is valid
+                      if (!isNaN(entryDate.getTime())) {
+                        const isToday = entryDate.toDateString() === new Date().toDateString();
+                        timeStr = isToday
+                          ? `Today • ${entryDate.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })}`
+                          : entryDate.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+                      } else {
+                        // Fallback: try parsing just the date part
+                        const simpleDate = new Date(entry.entry_date);
+                        if (!isNaN(simpleDate.getTime())) {
+                          entryDate = simpleDate;
+                          timeStr = simpleDate.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+                        } else {
+                          entryDate = new Date();
+                          timeStr = "Invalid Date";
+                        }
+                      }
+                    } catch (err) {
+                      console.warn("Error parsing date for entry:", entry.id, err);
+                      entryDate = new Date();
+                      timeStr = "Date not available";
+                    }
+                  } else {
+                    // No date available, use current date as fallback
+                    entryDate = new Date();
+                    timeStr = "Date not available";
+                  }
 
                   return (
                     <div

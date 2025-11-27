@@ -2,6 +2,7 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { getAuthToken, isAuthenticated, setAuth } from "../utils/auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "http://localhost:5000";
@@ -40,11 +41,13 @@ function InvitePageContent() {
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formStatus, setFormStatus] = useState<string | null>(null);
+  const [bigLogoUrl, setBigLogoUrl] = useState<string | null>(null);
 
   const token = searchParams.get("token");
   const businessId = searchParams.get("business");
   const emailParam = searchParams.get("email");
   const roleParam = searchParams.get("role");
+  const cashbookIdParam = searchParams.get("cashbook");
 
   useEffect(() => {
     if (!token) {
@@ -55,6 +58,34 @@ function InvitePageContent() {
 
     verifyInvite();
   }, [token]);
+
+  // Fetch big logo from site settings
+  useEffect(() => {
+    const fetchBigLogo = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/settings/site/public`);
+        if (response.ok) {
+          const siteSettings = await response.json();
+          console.log("Site settings fetched:", siteSettings);
+          if (siteSettings.bigLogoUrl) {
+            const logoUrl = siteSettings.bigLogoUrl.startsWith('http') 
+              ? siteSettings.bigLogoUrl 
+              : `${API_BASE}/uploads/${siteSettings.bigLogoUrl}`;
+            console.log("Setting big logo URL:", logoUrl);
+            setBigLogoUrl(logoUrl);
+          } else {
+            console.log("No big logo URL in site settings");
+          }
+        } else {
+          console.warn("Failed to fetch site settings, status:", response.status);
+        }
+      } catch (err) {
+        console.warn("Failed to fetch big logo:", err);
+        // Continue without logo - will show fallback
+      }
+    };
+    fetchBigLogo();
+  }, []);
 
   useEffect(() => {
     // Set email from URL param and check if it exists
@@ -178,12 +209,18 @@ function InvitePageContent() {
       }
 
       // After OTP verification, create/login user
+      // Get role from invite data if available
+      const inviteRole = inviteData?.role || roleParam || null;
+      
       const createResponse = await fetch(`${API_BASE}/api/auth/create-user`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ 
+          email: email.trim(),
+          role: inviteRole || undefined, // Pass role from invite if available
+        }),
       });
 
       if (!createResponse.ok) {
@@ -195,6 +232,14 @@ function InvitePageContent() {
       if (userData.token && userData.user) {
         setAuth(userData.token, userData.user);
         setShowAcceptSection(true);
+        
+        // Auto-accept invite after OTP registration if token exists
+        if (token) {
+          // Small delay to ensure auth is set
+          setTimeout(() => {
+            handleAcceptInvite();
+          }, 500);
+        }
       }
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Failed to verify OTP");
@@ -252,6 +297,9 @@ function InvitePageContent() {
     }
 
     try {
+      // Get role from invite data if available
+      const inviteRole = inviteData?.role || roleParam || null;
+      
       const response = await fetch(`${API_BASE}/api/auth/register`, {
         method: "POST",
         headers: {
@@ -262,6 +310,7 @@ function InvitePageContent() {
           password,
           firstName: firstName.trim() || undefined,
           lastName: lastName.trim() || undefined,
+          role: inviteRole || undefined, // Pass role from invite if available
         }),
       });
 
@@ -274,6 +323,14 @@ function InvitePageContent() {
       if (data.token && data.user) {
         setAuth(data.token, data.user);
         setShowAcceptSection(true);
+        
+        // Auto-accept invite after registration if token exists
+        if (token) {
+          // Small delay to ensure auth is set
+          setTimeout(() => {
+            handleAcceptInvite();
+          }, 500);
+        }
       }
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Registration failed");
@@ -297,6 +354,16 @@ function InvitePageContent() {
         throw new Error("Not authenticated");
       }
 
+      // Log for debugging
+      console.log('Accepting invite with:', {
+        token,
+        businessId: inviteData?.businessId || businessId,
+        role: inviteData?.role || roleParam || "Staff",
+        cashbookId: cashbookIdParam,
+        cashbookIdFromURL: searchParams.get("cashbook"),
+        allParams: Object.fromEntries(searchParams.entries()),
+      });
+
       const response = await fetch(`${API_BASE}/api/invites/accept`, {
         method: "POST",
         headers: {
@@ -307,6 +374,7 @@ function InvitePageContent() {
           token,
           businessId: inviteData?.businessId || businessId,
           role: inviteData?.role || roleParam || "Staff",
+          cashbookId: cashbookIdParam || undefined, // Pass cashbook ID if present in URL
         }),
       });
 
@@ -379,14 +447,38 @@ function InvitePageContent() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-2xl mx-auto">
-        {/* Header with HissabBook branding */}
-        <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-white text-xl font-bold text-[#2357FF] shadow-lg">
-              H
-            </span>
-            <span className="text-2xl font-bold text-[#2357FF]">HissabBook</span>
-          </div>
+        {/* Header with Big Logo */}
+        <div className="text-center mb-10">
+          <Link href="/" className="flex items-center justify-center mb-6 transition-transform hover:scale-105">
+            {bigLogoUrl ? (
+              <div className="relative">
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-400/20 to-purple-400/20 blur-3xl rounded-full"></div>
+                <img
+                  src={bigLogoUrl}
+                  alt="HissabBook"
+                  className="relative h-20 md:h-24 w-auto object-contain drop-shadow-lg transition-transform hover:scale-105 cursor-pointer"
+                  onError={(e) => {
+                    // Fallback to default logo if image fails to load
+                    e.currentTarget.style.display = 'none';
+                    const parent = e.currentTarget.parentElement?.parentElement;
+                    if (parent) {
+                      const fallback = parent.querySelector('.logo-fallback');
+                      if (fallback) fallback.classList.remove('hidden');
+                    }
+                  }}
+                />
+              </div>
+            ) : null}
+            <div className={`logo-fallback flex items-center justify-center gap-3 ${bigLogoUrl ? 'hidden' : ''}`}>
+              <div className="relative">
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-400/20 to-purple-400/20 blur-2xl rounded-xl"></div>
+                <span className="relative flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-[#2357FF] to-[#1a46d9] text-2xl font-bold text-white shadow-xl">
+                  H
+                </span>
+              </div>
+              <span className="text-3xl font-bold bg-gradient-to-r from-[#2357FF] to-[#1a46d9] bg-clip-text text-transparent">HissabBook</span>
+            </div>
+          </Link>
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden">

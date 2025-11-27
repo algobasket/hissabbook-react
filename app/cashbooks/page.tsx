@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import AppShell from "../components/AppShell";
 import ProtectedRoute from "../components/ProtectedRoute";
-import { getAuthToken, isAdmin } from "../utils/auth";
+import { getAuthToken, isAdmin, getUserRole, getUser, fetchUserPermissions } from "../utils/auth";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ||
@@ -39,6 +39,7 @@ export default function CashbooksPage() {
   // Modal states
   const [renameModalOpen, setRenameModalOpen] = useState(false);
   const [duplicateModalOpen, setDuplicateModalOpen] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [renameName, setRenameName] = useState("");
   const [duplicateName, setDuplicateName] = useState("");
@@ -56,6 +57,7 @@ export default function CashbooksPage() {
 
   const [selectedBusinessId, setSelectedBusinessId] = useState<string | null>(null);
   const [selectedBusinessName, setSelectedBusinessName] = useState<string | null>(null);
+  const [userPermissions, setUserPermissions] = useState<string[]>([]);
   
   // Email verification states
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -65,6 +67,12 @@ export default function CashbooksPage() {
   const [sendingVerificationEmail, setSendingVerificationEmail] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
+
+  // Members modal states
+  const [showMembersModal, setShowMembersModal] = useState(false);
+  const [selectedBookForMembers, setSelectedBookForMembers] = useState<Book | null>(null);
+  const [bookMembers, setBookMembers] = useState<any[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
 
   // Fetch account details to check email verification status
   const fetchAccountDetails = async () => {
@@ -103,6 +111,8 @@ export default function CashbooksPage() {
     setSelectedBusinessId(businessId);
     fetchBusinessName(businessId);
     fetchAccountDetails();
+    // Fetch user permissions on mount
+    fetchUserPermissions().then(setUserPermissions);
   }, []);
 
   // Handle send verification email
@@ -224,8 +234,12 @@ export default function CashbooksPage() {
   }, []);
 
   useEffect(() => {
-    if (selectedBusinessId !== null) {
-      // Only fetch if we've loaded the business ID (null means not yet loaded, empty string means no business selected)
+    // For staff users, fetch books immediately (they see books they're members of, regardless of business)
+    // For managers, only fetch if business ID is loaded
+    const userRole = getUserRole();
+    const isStaff = userRole === "staff";
+    
+    if (isStaff || selectedBusinessId !== null) {
       fetchBooks();
     }
   }, [searchQuery, selectedBusinessId]);
@@ -446,10 +460,50 @@ export default function CashbooksPage() {
     }
   };
 
-  const handleDeleteBook = async (book: Book) => {
-    if (!window.confirm(`Are you sure you want to delete "${book.name}"? This action cannot be undone.`)) {
-      return;
+  const handleDeleteBook = (book: Book) => {
+    setSelectedBook(book);
+    setDeleteModalOpen(true);
+  };
+
+  const handleShowMembers = async (book: Book, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedBookForMembers(book);
+    setShowMembersModal(true);
+    setBookMembers([]);
+    await fetchBookMembers(book.id);
+  };
+
+  const fetchBookMembers = async (bookId: string) => {
+    try {
+      setLoadingMembers(true);
+      const token = getAuthToken();
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
+
+      const response = await fetch(`${API_BASE}/api/books/${bookId}/users`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch members");
+      }
+
+      const data = await response.json();
+      setBookMembers(data.users || []);
+    } catch (err) {
+      console.error("Error fetching book members:", err);
+      setError(err instanceof Error ? err.message : "Failed to load members");
+    } finally {
+      setLoadingMembers(false);
     }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedBook) return;
 
     try {
       setSaving(true);
@@ -459,11 +513,10 @@ export default function CashbooksPage() {
         throw new Error("Not authenticated");
       }
 
-      const response = await fetch(`${API_BASE}/api/books/${book.id}`, {
+      const response = await fetch(`${API_BASE}/api/books/${selectedBook.id}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
         },
       });
 
@@ -472,6 +525,8 @@ export default function CashbooksPage() {
         throw new Error(errorData.message || "Failed to delete book");
       }
 
+      setDeleteModalOpen(false);
+      setSelectedBook(null);
       // Refresh the books list
       fetchBooks();
     } catch (err) {
@@ -528,8 +583,8 @@ export default function CashbooksPage() {
         <div className="flex gap-6">
           {/* Main Content */}
           <div className="flex-1 space-y-6">
-            {/* Business Name */}
-            {selectedBusinessName && (
+            {/* Business Name - Only show for managers */}
+            {selectedBusinessName && (getUserRole() === "managers" || getUserRole() === "manager") && (
               <div className="mb-2">
                 <h2 className="text-xl font-semibold text-[#1f2937]">{selectedBusinessName}</h2>
               </div>
@@ -595,7 +650,12 @@ export default function CashbooksPage() {
                       <div className="flex-1">
                         <h3 className="text-base font-semibold text-[#1f2937]">{book.name}</h3>
                         <div className="mt-1 flex items-center gap-4 text-sm text-slate-500">
-                          <span>{book.memberCount || 1} members</span>
+                          <span
+                            onClick={(e) => handleShowMembers(book, e)}
+                            className="cursor-pointer hover:text-[#2f4bff] transition"
+                          >
+                            {book.memberCount || 1} members
+                          </span>
                           <span>•</span>
                           <span>{formatDateAgo(book.updatedAt)}</span>
                         </div>
@@ -612,163 +672,180 @@ export default function CashbooksPage() {
                           {formatCurrency(book.totalBalance)}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRename(book);
-                          }}
-                          className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-[#2f4bff] transition"
-                          title="Rename"
-                        >
-                          <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                            />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDuplicate(book);
-                          }}
-                          className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-[#2f4bff] transition"
-                          title="Duplicate Book"
-                        >
-                          <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                            />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            router.push(`/cashbooks/${book.id}/settings/members`);
-                          }}
-                          className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-[#2f4bff] transition"
-                          title="Add Member"
-                        >
-                          <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                          </svg>
-                        </button>
-                        {isAdmin() && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteBook(book);
-                            }}
-                            className="rounded-lg p-2 text-slate-400 hover:bg-red-100 hover:text-red-600 transition"
-                            title="Delete Book"
-                            disabled={saving}
-                          >
-                            <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        )}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleMoveBook(book);
-                          }}
-                          className="rounded-lg p-2 text-rose-500 hover:bg-rose-50 transition"
-                          title="Move to Another Business"
-                        >
-                          <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                          </svg>
-                        </button>
-                      </div>
+                      {/* Action buttons - Show based on permissions */}
+                      {(userPermissions.includes("cashbooks.update") || userPermissions.includes("cashbooks.create") || userPermissions.includes("cashbooks.delete") || book.ownerId === getUser()?.id) && (
+                        <div className="flex items-center gap-2">
+                          {userPermissions.includes("cashbooks.update") && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRename(book);
+                              }}
+                              className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-[#2f4bff] transition"
+                              title="Rename"
+                            >
+                              <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                />
+                              </svg>
+                            </button>
+                          )}
+                          {userPermissions.includes("cashbooks.create") && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDuplicate(book);
+                              }}
+                              className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-[#2f4bff] transition"
+                              title="Duplicate Book"
+                            >
+                              <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                                />
+                              </svg>
+                            </button>
+                          )}
+                          {userPermissions.includes("cashbooks.update") && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                router.push(`/cashbooks/${book.id}/settings/members`);
+                              }}
+                              className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-[#2f4bff] transition"
+                              title="Add Member"
+                            >
+                              <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                              </svg>
+                            </button>
+                          )}
+                          {userPermissions.includes("cashbooks.delete") && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteBook(book);
+                              }}
+                              className="rounded-lg p-2 text-slate-400 hover:bg-red-100 hover:text-red-600 transition"
+                              title="Delete Book"
+                              disabled={saving}
+                            >
+                              <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          )}
+                          {userPermissions.includes("cashbooks.update") && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMoveBook(book);
+                              }}
+                              className="rounded-lg p-2 text-rose-500 hover:bg-rose-50 transition"
+                              title="Move to Another Business"
+                            >
+                              <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
               </div>
             )}
 
-            {/* Add New Book Section */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6">
-              <div className="mb-4 flex items-center gap-3">
-                <svg className="h-6 w-6 text-[#2f4bff]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
-                  />
-                </svg>
-                <h3 className="text-lg font-semibold text-[#1f2937]">Add New Book</h3>
+            {/* Add New Book Section - Show based on permissions */}
+            {userPermissions.includes("cashbooks.create") && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-6">
+                <div className="mb-4 flex items-center gap-3">
+                  <svg className="h-6 w-6 text-[#2f4bff]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+                    />
+                  </svg>
+                  <h3 className="text-lg font-semibold text-[#1f2937]">Add New Book</h3>
+                </div>
+                <p className="mb-4 text-sm text-slate-600">Click to quickly add books for</p>
+                <div className="flex flex-wrap gap-2">
+                  {quickBookTemplates.map((template) => (
+                    <button
+                      key={template}
+                      onClick={() => handleQuickBook(template)}
+                      className="rounded-lg border border-[#2f4bff]/20 bg-white px-4 py-2 text-sm font-medium text-[#2f4bff] transition hover:border-[#2f4bff] hover:bg-[#2f4bff]/5"
+                    >
+                      {template}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <p className="mb-4 text-sm text-slate-600">Click to quickly add books for</p>
-              <div className="flex flex-wrap gap-2">
-                {quickBookTemplates.map((template) => (
-                  <button
-                    key={template}
-                    onClick={() => handleQuickBook(template)}
-                    className="rounded-lg border border-[#2f4bff]/20 bg-white px-4 py-2 text-sm font-medium text-[#2f4bff] transition hover:border-[#2f4bff] hover:bg-[#2f4bff]/5"
-                  >
-                    {template}
-                  </button>
-                ))}
-              </div>
-            </div>
+            )}
           </div>
 
           {/* Right Sidebar */}
           <aside className="hidden w-80 space-y-4 lg:block">
-            {/* Add New Book Button */}
-            <button
-              onClick={() => router.push("/add-new-book")}
-              className="w-full rounded-xl bg-[#2f4bff] px-6 py-3 text-sm font-semibold text-white shadow-[0_10px_25px_rgba(47,75,255,0.35)] transition hover:-translate-y-0.5"
-            >
-              <div className="flex items-center justify-center gap-2">
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                </svg>
-                Add New Book
-              </div>
-            </button>
-
-            {/* Login via Email ID Card */}
-            <div className="rounded-2xl border-2 border-emerald-200 bg-emerald-50/50 p-6">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100">
-                  <svg className="h-6 w-6 text-emerald-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                    />
-                  </svg>
-                </div>
-                <h4 className="text-base font-semibold text-[#1f2937]">Login via Email ID</h4>
-              </div>
-              <p className="mb-4 text-sm text-slate-600">Verify email to login to desktop</p>
-              {isEmailVerified && userEmail ? (
-                <div className="flex items-center justify-center gap-2 rounded-lg bg-emerald-100 px-4 py-2 text-sm font-medium text-emerald-700">
+            {/* Add New Book Button - Show based on permissions */}
+            {userPermissions.includes("cashbooks.create") && (
+              <button
+                onClick={() => router.push("/add-new-book")}
+                className="w-full rounded-xl bg-[#2f4bff] px-6 py-3 text-sm font-semibold text-white shadow-[0_10px_25px_rgba(47,75,255,0.35)] transition hover:-translate-y-0.5"
+              >
+                <div className="flex items-center justify-center gap-2">
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                   </svg>
-                  <span>Email Verified</span>
+                  Add New Book
                 </div>
-              ) : (
-                <button
-                  onClick={() => {
-                    setShowEmailModal(true);
-                    setEmailInput(userEmail || "");
-                    setEmailError(null);
-                    setEmailSuccess(null);
-                  }}
-                  className="w-full rounded-lg bg-[#2f4bff] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#2f4bff]/90"
-                >
-                  Add Email
-                </button>
-              )}
-            </div>
+              </button>
+            )}
+
+            {/* Login via Email ID Card - Only show if user has verify email permission */}
+            {userPermissions.includes("accounts.verify_email") && (
+              <div className="rounded-2xl border-2 border-emerald-200 bg-emerald-50/50 p-6">
+                <div className="mb-4 flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100">
+                    <svg className="h-6 w-6 text-emerald-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                      />
+                    </svg>
+                  </div>
+                  <h4 className="text-base font-semibold text-[#1f2937]">Login via Email ID</h4>
+                </div>
+                <p className="mb-4 text-sm text-slate-600">Verify email to login to desktop</p>
+                {isEmailVerified && userEmail ? (
+                  <div className="flex items-center justify-center gap-2 rounded-lg bg-emerald-100 px-4 py-2 text-sm font-medium text-emerald-700">
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>Email Verified</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setShowEmailModal(true);
+                      setEmailInput(userEmail || "");
+                      setEmailError(null);
+                      setEmailSuccess(null);
+                    }}
+                    className="w-full rounded-lg bg-[#2f4bff] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#2f4bff]/90"
+                  >
+                    Add Email
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Tried Passbook Card */}
             <div className="rounded-2xl border border-slate-200 bg-white p-6">
@@ -1133,6 +1210,139 @@ export default function CashbooksPage() {
                   className="rounded-xl bg-[#2f4bff] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#2f4bff]/90 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {sendingVerificationEmail ? "Sending..." : "Verify Email"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Book Confirmation Modal */}
+        {deleteModalOpen && selectedBook && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <h2 className="text-lg font-semibold text-[#1f2937]">Delete Book</h2>
+                <button
+                  onClick={() => {
+                    setDeleteModalOpen(false);
+                    setSelectedBook(null);
+                  }}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                  disabled={saving}
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="p-6">
+                <div className="mb-4 flex items-start gap-3 rounded-lg bg-rose-50 p-3">
+                  <svg className="h-5 w-5 text-rose-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <p className="text-sm text-rose-800">
+                    Are you sure you want to delete "<strong>{selectedBook.name}</strong>"? This action cannot be undone.
+                  </p>
+                </div>
+                {error && (
+                  <div className="mb-4 rounded-lg bg-red-50 border border-red-200 p-3">
+                    <p className="text-sm text-red-800">{error}</p>
+                  </div>
+                )}
+              </div>
+              <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+                <button
+                  onClick={() => {
+                    setDeleteModalOpen(false);
+                    setSelectedBook(null);
+                    setError(null);
+                  }}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  disabled={saving}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteConfirm}
+                  disabled={saving}
+                  className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {saving ? "Deleting..." : "Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Book Members Modal */}
+        {showMembersModal && selectedBookForMembers && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-md rounded-2xl bg-white shadow-xl max-h-[90vh] overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <h2 className="text-lg font-semibold text-[#1f2937]">
+                  Members of {selectedBookForMembers.name}
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowMembersModal(false);
+                    setSelectedBookForMembers(null);
+                    setBookMembers([]);
+                  }}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto px-6 py-4">
+                {loadingMembers ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-[#2f4bff]"></div>
+                  </div>
+                ) : bookMembers.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-sm text-slate-500">No members found</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {bookMembers.map((member) => (
+                      <div
+                        key={member.id}
+                        className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3"
+                      >
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-[#2f4bff] to-[#4f6dff] text-white font-semibold text-sm">
+                          {(member.name || member.email || "U").charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-[#1f2937] truncate">
+                            {member.name || member.email || "Unknown User"}
+                          </p>
+                          <p className="text-xs text-slate-500 truncate">{member.email}</p>
+                          {member.phone && (
+                            <p className="text-xs text-slate-500 truncate">{member.phone}</p>
+                          )}
+                        </div>
+                        {member.isOwner && (
+                          <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">
+                            Owner
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+                <button
+                  onClick={() => {
+                    setShowMembersModal(false);
+                    setSelectedBookForMembers(null);
+                    setBookMembers([]);
+                  }}
+                  className="rounded-xl bg-[#2f4bff] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#2f4bff]/90"
+                >
+                  Close
                 </button>
               </div>
             </div>

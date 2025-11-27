@@ -7,6 +7,11 @@ import type { ReactNode } from "react";
 import { getUser, clearAuth, getUserRole } from "../utils/auth";
 import BusinessSelector from "./BusinessSelector";
 
+const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") || 
+  (typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "http://localhost:5000"
+    : "/backend");
+
 type NavItem = {
   label: string;
   href: string;
@@ -143,6 +148,7 @@ export default function AppShell({ activePath, children }: AppShellProps) {
   const [userName, setUserName] = useState("User");
   const [userInitial, setUserInitial] = useState("U");
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [smallLogoUrl, setSmallLogoUrl] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Get user role and filter navigation based on role
@@ -151,14 +157,30 @@ export default function AppShell({ activePath, children }: AppShellProps) {
       return managerNavSections;
     }
     
-    // For staff users, remove Settings section
+    // For staff users, add Cashbooks and remove Settings section
     if (userRole === "staff") {
-      return allNavSections.map(section => {
-        if (section.title === "Settings") {
-          return { ...section, items: [] }; // Remove Settings item
-        }
-        return section;
-      }).filter(section => section.items.length > 0); // Remove empty sections
+      const staffNavSections = [
+        {
+          title: "HissabBook UPI",
+          items: [
+            { label: "Dashboard", href: "/dashboard", icon: "dashboard" },
+            { label: "Request Payout", href: "/request-payout", icon: "payout" },
+            { label: "Wallets", href: "/wallets", icon: "wallet" },
+            { label: "Approvals", href: "/approvals", icon: "approvals" },
+          ],
+        },
+        {
+          title: "Book Keeping",
+          items: [
+            { label: "Cashbooks", href: "/cashbooks", icon: "cashbooks" },
+          ],
+        },
+        {
+          title: "Account",
+          items: [{ label: "Account Info", href: "/account-info", icon: "account" }],
+        },
+      ];
+      return staffNavSections;
     }
     
     return allNavSections;
@@ -212,6 +234,28 @@ export default function AppShell({ activePath, children }: AppShellProps) {
     }
   }, []);
 
+  // Fetch small logo from site settings
+  useEffect(() => {
+    const fetchSmallLogo = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/settings/site/public`);
+        if (response.ok) {
+          const siteSettings = await response.json();
+          if (siteSettings.smallLogoUrl) {
+            const logoUrl = siteSettings.smallLogoUrl.startsWith('http') 
+              ? siteSettings.smallLogoUrl 
+              : `${API_BASE}/uploads/${siteSettings.smallLogoUrl}`;
+            setSmallLogoUrl(logoUrl);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to fetch small logo:", err);
+        // Continue without logo - will show fallback
+      }
+    };
+    fetchSmallLogo();
+  }, []);
+
   // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -248,15 +292,33 @@ export default function AppShell({ activePath, children }: AppShellProps) {
   return (
     <div className="flex min-h-screen bg-[#f5f7ff] font-sans text-[#111827]">
       <aside className="hidden w-72 flex-shrink-0 border-r border-slate-200 bg-white px-5 py-8 lg:block">
-        <div className="flex items-center gap-3 px-4 pb-8">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#2f4bff] text-lg font-bold text-white">
-            H
-          </span>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[#2f4bff]">Console</p>
-            <span className="text-lg font-semibold text-[#111827]">HissabBook</span>
+        <Link href="/" className="flex items-center gap-3 px-4 pb-8 transition-transform hover:scale-105">
+          {smallLogoUrl ? (
+            <img
+              src={smallLogoUrl}
+              alt="HissabBook"
+              className="h-[68px] w-auto object-contain cursor-pointer"
+              onError={(e) => {
+                // Fallback to default logo if image fails to load
+                e.currentTarget.style.display = 'none';
+                const parent = e.currentTarget.parentElement;
+                if (parent) {
+                  const fallback = parent.querySelector('.logo-fallback');
+                  if (fallback) fallback.classList.remove('hidden');
+                }
+              }}
+            />
+          ) : null}
+          <div className={`logo-fallback flex items-center gap-3 ${smallLogoUrl ? 'hidden' : ''}`}>
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#2f4bff] text-lg font-bold text-white">
+              H
+            </span>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[#2f4bff]">Console</p>
+              <span className="text-lg font-semibold text-[#111827]">HissabBook</span>
+            </div>
           </div>
-        </div>
+        </Link>
         <nav className="space-y-8 text-sm font-medium text-[#1f2937]">
           {navSections.map((section) => (
             <div key={section.title}>
@@ -282,7 +344,7 @@ export default function AppShell({ activePath, children }: AppShellProps) {
                           active ? "bg-white/15 text-white" : "bg-slate-100 text-[#334155] group-hover:bg-slate-200"
                         }`}
                       >
-                        {iconMap[item.icon]}
+                        {iconMap[item.icon as keyof typeof iconMap]}
                       </span>
                       <span className={`text-sm font-medium ${active ? "text-white" : "text-[#1f2937]"}`}>
                         {item.label}

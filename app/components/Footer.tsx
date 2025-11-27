@@ -1,6 +1,37 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
+
+const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") || 
+  (typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "http://localhost:5000"
+    : "/backend");
 
 export default function Footer() {
+  const [smallLogoUrl, setSmallLogoUrl] = useState<string | null>(null);
+
+  // Fetch small logo from site settings
+  useEffect(() => {
+    const fetchSmallLogo = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/settings/site/public`);
+        if (response.ok) {
+          const siteSettings = await response.json();
+          if (siteSettings.smallLogoUrl) {
+            const logoUrl = siteSettings.smallLogoUrl.startsWith('http') 
+              ? siteSettings.smallLogoUrl 
+              : `${API_BASE}/uploads/${siteSettings.smallLogoUrl}`;
+            setSmallLogoUrl(logoUrl);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to fetch small logo:", err);
+        // Continue without logo - will show fallback
+      }
+    };
+    fetchSmallLogo();
+  }, []);
   return (
     <footer className="relative overflow-hidden border-t border-slate-200/50 bg-gradient-to-b from-white via-slate-50/30 to-white">
       {/* Decorative background elements */}
@@ -15,14 +46,32 @@ export default function Footer() {
           {/* Company Information */}
           <div className="space-y-6">
             {/* Logo and Name */}
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary via-primary/90 to-primary shadow-lg shadow-primary/20 ring-2 ring-primary/10 transition-transform hover:scale-110">
-                <span className="text-xl font-extrabold text-white">H</span>
+            <Link href="/" className="flex items-center gap-3 transition-transform hover:scale-105">
+              {smallLogoUrl ? (
+                <img
+                  src={smallLogoUrl}
+                  alt="HissabBook"
+                  className="h-[68px] w-auto object-contain cursor-pointer"
+                  onError={(e) => {
+                    // Fallback to default logo if image fails to load
+                    e.currentTarget.style.display = 'none';
+                    const parent = e.currentTarget.parentElement;
+                    if (parent) {
+                      const fallback = parent.querySelector('.logo-fallback');
+                      if (fallback) fallback.classList.remove('hidden');
+                    }
+                  }}
+                />
+              ) : null}
+              <div className={`logo-fallback flex items-center gap-3 ${smallLogoUrl ? 'hidden' : ''}`}>
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary via-primary/90 to-primary shadow-lg shadow-primary/20 ring-2 ring-primary/10 transition-transform hover:scale-110">
+                  <span className="text-xl font-extrabold text-white">H</span>
+                </div>
+                <span className="text-2xl font-extrabold text-slate-900">
+                  HissabBook
+                </span>
               </div>
-              <span className="text-2xl font-extrabold text-slate-900">
-                HissabBook
-              </span>
-            </div>
+            </Link>
 
             {/* Address */}
             <div className="space-y-2">

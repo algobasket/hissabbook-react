@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import AppShell from "../../../../components/AppShell";
 import ProtectedRoute from "../../../../components/ProtectedRoute";
-import { getAuthToken, getUser } from "../../../../utils/auth";
+import { getAuthToken, getUser, getUserRole, isAdmin, fetchUserPermissions, hasPermission } from "../../../../utils/auth";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ||
@@ -53,6 +53,17 @@ export default function BookMembersSettingsPage() {
   const [loadingPermissions, setLoadingPermissions] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [invitePhone, setInvitePhone] = useState("");
+
+  // Check if user is manager or admin (not staff)
+  const isManagerOrAdmin = () => {
+    const role = getUserRole();
+    return role === "managers" || role === "manager" || isAdmin();
+  };
+
+  // Check if user has specific permission
+  const hasPermissionCheck = (permissionCode: string) => {
+    return userPermissions.includes(permissionCode);
+  };
   const [inviteMethod, setInviteMethod] = useState<"existing" | "email" | "phone">("existing");
   const [inviteStep, setInviteStep] = useState<"select" | "role">("select");
   const [inviteRole, setInviteRole] = useState<"Staff" | "Partner">("Staff");
@@ -68,6 +79,10 @@ export default function BookMembersSettingsPage() {
     duplicateCustomFields: true,
   });
   const [saving, setSaving] = useState(false);
+  const [removeMemberModalOpen, setRemoveMemberModalOpen] = useState(false);
+  const [memberToRemove, setMemberToRemove] = useState<BookMember | null>(null);
+  const [removingMember, setRemovingMember] = useState(false);
+  const [userPermissions, setUserPermissions] = useState<string[]>([]);
   const currentUser = getUser();
 
   useEffect(() => {
@@ -75,6 +90,8 @@ export default function BookMembersSettingsPage() {
       fetchBook();
       fetchMembers();
     }
+    // Fetch user permissions on mount
+    fetchUserPermissions().then(setUserPermissions);
   }, [bookId]);
 
   const fetchBook = async () => {
@@ -457,29 +474,31 @@ export default function BookMembersSettingsPage() {
     }
   };
 
-  const handleRemoveMember = async (userId: string) => {
+  const handleRemoveMemberClick = (member: BookMember) => {
     // Prevent removing the owner
-    const member = members.find(m => m.id === userId);
-    if (member && (member.isOwner || member.id === book?.ownerId)) {
-      alert("Cannot remove the book owner from members");
+    if (member.isOwner || member.id === book?.ownerId) {
+      setError("Cannot remove the book owner from members");
       return;
     }
+    setMemberToRemove(member);
+    setRemoveMemberModalOpen(true);
+  };
 
-    if (!window.confirm("Are you sure you want to remove this member from the book?")) {
-      return;
-    }
+  const handleRemoveMemberConfirm = async () => {
+    if (!memberToRemove) return;
 
     try {
+      setRemovingMember(true);
+      setError(null);
       const token = getAuthToken();
       if (!token) {
         throw new Error("Not authenticated");
       }
 
-      const response = await fetch(`${API_BASE}/api/books/${bookId}/users/${userId}`, {
+      const response = await fetch(`${API_BASE}/api/books/${bookId}/users/${memberToRemove.id}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
         },
       });
 
@@ -488,10 +507,14 @@ export default function BookMembersSettingsPage() {
         throw new Error(errorData.message || "Failed to remove member");
       }
 
+      setRemoveMemberModalOpen(false);
+      setMemberToRemove(null);
       fetchMembers(); // Refresh members list
     } catch (err) {
       console.error("Error removing member:", err);
       setError(err instanceof Error ? err.message : "Failed to remove member");
+    } finally {
+      setRemovingMember(false);
     }
   };
 
@@ -633,7 +656,6 @@ export default function BookMembersSettingsPage() {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
         },
       });
 
@@ -668,38 +690,49 @@ export default function BookMembersSettingsPage() {
               Settings ({book?.name || "Book"})
             </button>
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  if (book) {
-                    setRenameName(book.name);
-                    setRenameModalOpen(true);
-                  }
-                }}
-                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
-                Rename Book
-              </button>
-              <button
-                onClick={() => {
-                  if (book) {
-                    setDuplicateName(`${book.name} (Copy)`);
-                    setDuplicateModalOpen(true);
-                  }
-                }}
-                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
-                Duplicate Book
-              </button>
-              <button
-                onClick={() => {
-                  if (book && window.confirm(`Are you sure you want to delete "${book.name}"? This action cannot be undone.`)) {
-                    handleDeleteBook();
-                  }
-                }}
-                className="rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
-              >
-                Delete Book
-              </button>
+              {/* Action buttons - Show based on permissions */}
+              {(hasPermissionCheck("cashbooks.update") || hasPermissionCheck("cashbooks.delete") || hasPermissionCheck("cashbooks.create")) && (
+                <>
+                  {hasPermissionCheck("cashbooks.update") && (
+                    <button
+                      onClick={() => {
+                        if (book) {
+                          setRenameName(book.name);
+                          setRenameModalOpen(true);
+                        }
+                      }}
+                      className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      Rename Book
+                    </button>
+                  )}
+                  {hasPermissionCheck("cashbooks.create") && (
+                    <button
+                      onClick={() => {
+                        if (book) {
+                          setDuplicateName(`${book.name} (Copy)`);
+                          setDuplicateModalOpen(true);
+                        }
+                      }}
+                      className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      Duplicate Book
+                    </button>
+                  )}
+                  {hasPermissionCheck("cashbooks.delete") && (
+                    <button
+                      onClick={() => {
+                        if (book && window.confirm(`Are you sure you want to delete "${book.name}"? This action cannot be undone.`)) {
+                          handleDeleteBook();
+                        }
+                      }}
+                      className="rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                    >
+                      Delete Book
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           </div>
 
@@ -714,22 +747,24 @@ export default function BookMembersSettingsPage() {
               <p className="mt-1 text-sm text-slate-500">Add, Change role, Remove.</p>
             </div>
 
-            {/* Add Members Section */}
-            <div className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-6">
-              <h3 className="mb-2 text-base font-semibold text-[#1f2937]">Add Members</h3>
-              <p className="mb-4 text-sm text-slate-600">
-                Manage your cashflow together with your business partners, family or friends by adding them as members.
-              </p>
-              <button
-                onClick={handleAddMemberClick}
-                className="flex items-center gap-2 rounded-xl bg-[#2f4bff] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#2f4bff]/90 transition"
-              >
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                </svg>
-                Add member
-              </button>
-            </div>
+            {/* Add Members Section - Show based on permissions */}
+            {hasPermissionCheck("cashbooks.update") && (
+              <div className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-6">
+                <h3 className="mb-2 text-base font-semibold text-[#1f2937]">Add Members</h3>
+                <p className="mb-4 text-sm text-slate-600">
+                  Manage your cashflow together with your business partners, family or friends by adding them as members.
+                </p>
+                <button
+                  onClick={handleAddMemberClick}
+                  className="flex items-center gap-2 rounded-xl bg-[#2f4bff] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#2f4bff]/90 transition"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add member
+                </button>
+              </div>
+            )}
 
             {/* Total Members */}
             <div className="mb-4 flex items-center justify-between">
@@ -789,9 +824,9 @@ export default function BookMembersSettingsPage() {
                         >
                           {role}
                         </span>
-                        {!isCurrentUser && !member.isOwner && member.id !== book?.ownerId && (
+                        {!isCurrentUser && !member.isOwner && member.id !== book?.ownerId && hasPermissionCheck("cashbooks.update") && (
                           <button
-                            onClick={() => handleRemoveMember(member.id)}
+                            onClick={() => handleRemoveMemberClick(member)}
                             className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-red-600 transition"
                             title="Remove member"
                           >
@@ -808,19 +843,23 @@ export default function BookMembersSettingsPage() {
             )}
           </div>
 
-          {/* Entry Field Section */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-6">
-            <h2 className="mb-1 text-lg font-semibold text-[#1f2937]">
-              Entry Field <span className="text-rose-500">*</span>
-            </h2>
-            <p className="text-sm text-slate-500">Party, Category, Payment mode & Custom Fields.</p>
-          </div>
+          {/* Entry Field Section - Show based on permissions */}
+          {(hasPermissionCheck("cashbooks.update") || hasPermissionCheck("cashbooks.create")) && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-6">
+              <h2 className="mb-1 text-lg font-semibold text-[#1f2937]">
+                Entry Field <span className="text-rose-500">*</span>
+              </h2>
+              <p className="text-sm text-slate-500">Party, Category, Payment mode & Custom Fields.</p>
+            </div>
+          )}
 
-          {/* Edit Data Operator Role Section */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-6">
-            <h2 className="mb-1 text-lg font-semibold text-[#1f2937]">Edit Data Operator Role</h2>
-            <p className="text-sm text-slate-500">Make changes in role as per your need.</p>
-          </div>
+          {/* Edit Data Operator Role Section - Show based on permissions */}
+          {(hasPermissionCheck("cashbooks.update") || hasPermissionCheck("cashbooks.create")) && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-6">
+              <h2 className="mb-1 text-lg font-semibold text-[#1f2937]">Edit Data Operator Role</h2>
+              <p className="text-sm text-slate-500">Make changes in role as per your need.</p>
+            </div>
+          )}
         </div>
 
         {/* Add Member Modal */}
@@ -1386,6 +1425,65 @@ export default function BookMembersSettingsPage() {
                   className="rounded-xl bg-[#2f4bff] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#2f4bff]/90 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {saving ? "Creating..." : "Add New Book"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Remove Member Confirmation Modal */}
+        {removeMemberModalOpen && memberToRemove && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <h2 className="text-lg font-semibold text-[#1f2937]">Remove Member</h2>
+                <button
+                  onClick={() => {
+                    setRemoveMemberModalOpen(false);
+                    setMemberToRemove(null);
+                    setError(null);
+                  }}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                  disabled={removingMember}
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="p-6">
+                <div className="mb-4 flex items-start gap-3 rounded-lg bg-rose-50 p-3">
+                  <svg className="h-5 w-5 text-rose-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <p className="text-sm text-rose-800">
+                    Are you sure you want to remove <strong>{memberToRemove.name || memberToRemove.email || "this member"}</strong> from the book? This action cannot be undone.
+                  </p>
+                </div>
+                {error && (
+                  <div className="mb-4 rounded-lg bg-red-50 border border-red-200 p-3">
+                    <p className="text-sm text-red-800">{error}</p>
+                  </div>
+                )}
+              </div>
+              <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+                <button
+                  onClick={() => {
+                    setRemoveMemberModalOpen(false);
+                    setMemberToRemove(null);
+                    setError(null);
+                  }}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  disabled={removingMember}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleRemoveMemberConfirm}
+                  disabled={removingMember}
+                  className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {removingMember ? "Removing..." : "Remove"}
                 </button>
               </div>
             </div>
