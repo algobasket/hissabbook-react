@@ -270,6 +270,16 @@ export default function ApprovalsPage() {
                           // Normalize API_BASE (remove trailing slash)
                           const apiBaseNormalized = API_BASE.replace(/\/$/, '');
                           proofUrl = `${apiBaseNormalized}/uploads/${filename}`;
+                          
+                          // Debug logging (remove in production if needed)
+                          if (process.env.NODE_ENV === 'development') {
+                            console.log('Payout proof URL construction:', {
+                              original: request.proofFilename,
+                              cleaned: filename,
+                              apiBase: API_BASE,
+                              finalUrl: proofUrl
+                            });
+                          }
                         }
 
                         return (
@@ -398,12 +408,20 @@ export default function ApprovalsPage() {
             {/* Image Container */}
             <div className="p-6 bg-slate-50">
               <img
-                src={selectedImage}
+                src={selectedImage || ''}
                 alt="Attachment"
                 className="max-h-[75vh] max-w-full mx-auto rounded-lg shadow-lg object-contain bg-white"
                 onClick={(e) => e.stopPropagation()}
                 onError={(e) => {
+                  console.error('Failed to load payout proof image:', {
+                    url: selectedImage,
+                    apiBase: API_BASE,
+                    timestamp: new Date().toISOString()
+                  });
                   (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"%3E%3Crect fill="%23f3f4f6" width="400" height="300"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="16" fill="%236b7280"%3EImage not found%3C/text%3E%3C/svg%3E';
+                }}
+                onLoad={() => {
+                  console.log('Successfully loaded payout proof image:', selectedImage);
                 }}
               />
             </div>
