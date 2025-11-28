@@ -3972,15 +3972,30 @@ export default function BookDetailPage() {
                         if (!attachmentUrl && filePath) {
                           // If path starts with /, it's already a full path
                           if (filePath.startsWith('/')) {
-                            attachmentUrl = `${API_BASE}${filePath}`;
+                            // Remove any existing /backend/ prefix to avoid duplication
+                            let cleanPath = filePath;
+                            if (cleanPath.startsWith('/backend/')) {
+                              cleanPath = cleanPath.replace(/^\/backend/, '');
+                            }
+                            attachmentUrl = `${API_BASE}${cleanPath}`;
                           } else if (filePath.startsWith('http')) {
                             attachmentUrl = filePath;
                           } else {
                             attachmentUrl = `${API_BASE}/${filePath}`;
                           }
                         } else if (attachmentUrl && attachmentUrl.startsWith('/')) {
+                          // Remove any existing /backend/ prefix to avoid duplication
+                          let cleanUrl = attachmentUrl;
+                          if (cleanUrl.startsWith('/backend/')) {
+                            cleanUrl = cleanUrl.replace(/^\/backend/, '');
+                          }
                           // If URL is relative (starts with /), prepend API_BASE
-                          attachmentUrl = `${API_BASE}${attachmentUrl}`;
+                          attachmentUrl = `${API_BASE}${cleanUrl}`;
+                        } else if (attachmentUrl && !attachmentUrl.startsWith('http')) {
+                          // Handle case where URL might already have /backend/ prefix
+                          if (attachmentUrl.startsWith('/backend/')) {
+                            attachmentUrl = attachmentUrl; // Already correct
+                          }
                         }
                         
                         // Determine if it's an image
@@ -4901,13 +4916,19 @@ export default function BookDetailPage() {
                         // Normalize API_BASE (remove trailing slash)
                         const apiBaseNormalized = API_BASE.replace(/\/$/, '');
                         
+                        // Remove any existing /backend/ prefix to avoid duplication
+                        let cleanUrl = attachmentUrl;
+                        if (cleanUrl.startsWith('/backend/')) {
+                          cleanUrl = cleanUrl.replace(/^\/backend/, '');
+                        }
+                        
                         // Check if URL already contains the API_BASE path to avoid duplication
-                        if (attachmentUrl.startsWith(apiBaseNormalized)) {
+                        if (cleanUrl.startsWith(apiBaseNormalized)) {
                           // URL already includes API_BASE, use as-is
-                          attachmentUrl = attachmentUrl;
+                          attachmentUrl = cleanUrl;
                         } else {
                           // Prepend API_BASE
-                          attachmentUrl = `${apiBaseNormalized}${attachmentUrl}`;
+                          attachmentUrl = `${apiBaseNormalized}${cleanUrl}`;
                         }
                       } else if (!attachmentUrl.startsWith('http')) {
                         // Relative path without leading slash
