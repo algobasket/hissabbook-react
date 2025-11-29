@@ -5,6 +5,24 @@ const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ||
     ? "http://localhost:5000"
     : "/backend");
 
+// Helper function to construct absolute URL for backend API calls
+function getBackendUrl(path: string, request: NextRequest): string {
+  // If API_BASE is already an absolute URL, use it directly
+  if (API_BASE.startsWith('http://') || API_BASE.startsWith('https://')) {
+    return `${API_BASE}${path}`;
+  }
+  
+  // If API_BASE is relative, construct absolute URL from request
+  const url = new URL(request.url);
+  const protocol = url.protocol;
+  const host = url.host;
+  
+  // Remove leading slash from path if API_BASE already has it
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  
+  return `${protocol}//${host}${API_BASE}${cleanPath}`;
+}
+
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ shortCode: string }> }
@@ -22,7 +40,7 @@ export async function GET(
     }
 
     // Call backend API to get the original URL
-    const backendUrl = `${API_BASE}/api/s/${shortCode}`;
+    const backendUrl = getBackendUrl(`/api/s/${shortCode}`, request);
     
     try {
       const response = await fetch(backendUrl, {
