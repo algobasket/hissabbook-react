@@ -239,10 +239,20 @@ export default function CashbooksPage() {
     const userRole = getUserRole();
     const isStaff = userRole === "staff";
     
+    // Always fetch for staff, or for managers when business is selected
     if (isStaff || selectedBusinessId !== null) {
       fetchBooks();
     }
   }, [searchQuery, selectedBusinessId]);
+
+  // Also fetch books on mount for staff users
+  useEffect(() => {
+    const userRole = getUserRole();
+    const isStaff = userRole === "staff";
+    if (isStaff) {
+      fetchBooks();
+    }
+  }, []);
 
   const fetchBooks = async () => {
     try {

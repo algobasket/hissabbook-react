@@ -5,7 +5,17 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { getAuthToken, isAuthenticated, setAuth } from "../utils/auth";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "http://localhost:5000";
+// OTP endpoints are in api-system (port 4000)
+const OTP_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ||
+  (typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "http://localhost:4000"
+    : "");
+
+// Invite routes are in nodejs-backend (port 5000)
+const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ||
+  (typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "http://localhost:5000"
+    : "/backend");
 
 interface InviteData {
   token: string;
@@ -32,6 +42,7 @@ function InvitePageContent() {
 
   // Form states
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -46,6 +57,7 @@ function InvitePageContent() {
   const token = searchParams.get("token");
   const businessId = searchParams.get("business");
   const emailParam = searchParams.get("email");
+  const phoneParam = searchParams.get("phone");
   const roleParam = searchParams.get("role");
   const cashbookIdParam = searchParams.get("cashbook");
 
@@ -88,12 +100,22 @@ function InvitePageContent() {
   }, []);
 
   useEffect(() => {
-    // Set email from URL param and check if it exists
+    // Set email from URL param and check if it exists (for email invites)
     if (emailParam && inviteData && !isAuthenticated() && !checkingEmail && emailExists === null) {
       setEmail(emailParam);
       checkEmailExists(emailParam);
     }
-  }, [emailParam, inviteData]);
+    // Set phone from URL param or invite data (for phone invites)
+    if (phoneParam && inviteData && !isAuthenticated()) {
+      setPhone(phoneParam);
+      // For phone invites, skip email check and go directly to phone OTP
+      setEmailExists(false);
+    } else if (inviteData?.phone && !emailParam && !phoneParam && !isAuthenticated()) {
+      // If invite data has phone but no URL param, use invite data
+      setPhone(inviteData.phone);
+      setEmailExists(false);
+    }
+  }, [emailParam, phoneParam, inviteData]);
 
   const verifyInvite = async () => {
     try {
@@ -103,6 +125,7 @@ function InvitePageContent() {
       const params = new URLSearchParams({ token: token || "" });
       if (businessId) params.append("business", businessId);
       if (emailParam) params.append("email", emailParam);
+      if (phoneParam) params.append("phone", phoneParam);
       if (roleParam) params.append("role", roleParam);
 
       const response = await fetch(`${API_BASE}/api/invites/verify?${params.toString()}`, {
@@ -130,7 +153,7 @@ function InvitePageContent() {
   const checkEmailExists = async (emailToCheck: string) => {
     try {
       setCheckingEmail(true);
-      const response = await fetch(`${API_BASE}/api/auth/check-email?email=${encodeURIComponent(emailToCheck)}`, {
+      const response = await fetch(`${OTP_API_BASE}/api/auth/check-email?email=${encodeURIComponent(emailToCheck)}`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -167,7 +190,7 @@ function InvitePageContent() {
     setFormStatus(null);
 
     try {
-      const response = await fetch(`${API_BASE}/api/otp/email/request`, {
+      const response = await fetch(`${OTP_API_BASE}/api/otp/email/request`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -195,7 +218,7 @@ function InvitePageContent() {
     setFormStatus(null);
 
     try {
-      const response = await fetch(`${API_BASE}/api/otp/email/verify`, {
+      const response = await fetch(`${OTP_API_BASE}/api/otp/email/verify`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -212,13 +235,131 @@ function InvitePageContent() {
       // Get role from invite data if available
       const inviteRole = inviteData?.role || roleParam || null;
       
-      const createResponse = await fetch(`${API_BASE}/api/auth/create-user`, {
+      const createResponse = await fetch(`${OTP_API_BASE}/api/auth/create-user`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ 
           email: email.trim(),
+          role: inviteRole || undefined, // Pass role from invite if available
+        }),
+      });
+
+      if (!createResponse.ok) {
+        const data = await createResponse.json().catch(() => ({}));
+        throw new Error(data.message || "Failed to create/login user");
+      }
+
+      const userData = await createResponse.json();
+      if (userData.token && userData.user) {
+        setAuth(userData.token, userData.user);
+        setShowAcceptSection(true);
+        
+        // Auto-accept invite after OTP registration if token exists
+        if (token) {
+          // Small delay to ensure auth is set
+          setTimeout(() => {
+            handleAcceptInvite();
+          }, 500);
+        }
+      }
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Failed to verify OTP");
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const formatPhoneNumber = (phone: string): string => {
+    // Remove any non-digit characters
+    let cleaned = phone.replace(/\D/g, "");
+    
+    // Handle Indian phone numbers (10 digits)
+    if (cleaned.length === 10) {
+      // Add country code 91
+      return "91" + cleaned;
+    }
+    // If already has country code, return as is
+    if (cleaned.startsWith("91") && cleaned.length === 12) {
+      return cleaned;
+    }
+    // If starts with 0, replace with 91
+    if (cleaned.startsWith("0") && cleaned.length === 11) {
+      return "91" + cleaned.substring(1);
+    }
+    
+    return cleaned;
+  };
+
+  const handlePhoneOtpRequest = async () => {
+    setFormLoading(true);
+    setFormError(null);
+    setFormStatus(null);
+
+    try {
+      const formattedPhone = formatPhoneNumber(phone);
+      
+      const response = await fetch(`${OTP_API_BASE}/api/otp/request`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ phone: formattedPhone }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || "Failed to send OTP");
+      }
+
+      setOtpStep("verify");
+      setFormStatus("OTP sent to your phone. Please check your SMS.");
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Failed to send OTP");
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handlePhoneOtpVerify = async () => {
+    setFormLoading(true);
+    setFormError(null);
+    setFormStatus(null);
+
+    if (otpCode.trim().length < 4) {
+      setFormError("Enter the OTP received");
+      setFormLoading(false);
+      return;
+    }
+
+    try {
+      const formattedPhone = formatPhoneNumber(phone);
+      
+      const response = await fetch(`${OTP_API_BASE}/api/otp/verify`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ phone: formattedPhone, code: otpCode }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || "Invalid OTP");
+      }
+
+      // After OTP verification, create/login user by phone
+      // Get role from invite data if available
+      const inviteRole = inviteData?.role || roleParam || null;
+      
+      const createResponse = await fetch(`${OTP_API_BASE}/api/auth/create-user-phone`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ 
+          phone: formattedPhone,
           role: inviteRole || undefined, // Pass role from invite if available
         }),
       });
@@ -384,10 +525,22 @@ function InvitePageContent() {
       }
 
       const data = await response.json();
+      
+      // If a new token is returned (with updated role), update the auth
+      if (data.token && data.user) {
+        setAuth(data.token, data.user);
+        console.log('Updated auth with new token and role:', data.user.role);
+      }
+      
       setAccepted(true);
       
+      // Redirect based on role - staff should go to cashbooks, managers to dashboard
+      const userRole = data.user?.role || data.user?.roles?.[0];
+      const redirectPath = userRole === "staff" ? "/cashbooks" : "/dashboard";
+      
       setTimeout(() => {
-        router.push("/dashboard");
+        // Force a hard refresh to ensure books are fetched
+        window.location.href = redirectPath;
       }, 2000);
     } catch (err) {
       console.error("Error accepting invite:", err);
@@ -547,10 +700,77 @@ function InvitePageContent() {
                         Invited email: <strong>{inviteEmail}</strong>
                       </span>
                     )}
+                    {(phoneParam || inviteData?.phone) && (
+                      <span className="block mt-2 font-medium">
+                        Invited phone: <strong>{phoneParam || inviteData?.phone}</strong>
+                      </span>
+                    )}
                   </p>
                 </div>
 
-                {emailExists === null && !emailParam && (
+                {/* Show phone OTP form for phone invites */}
+                {(phoneParam || inviteData?.phone) && (
+                  <div className="space-y-4">
+                    <div>
+                      <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
+                        Phone Number
+                      </label>
+                      <input
+                        type="tel"
+                        id="phone"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="Enter your phone number"
+                        required
+                        disabled={!!phoneParam || !!inviteData?.phone}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2357FF] focus:border-transparent outline-none transition disabled:bg-gray-100"
+                      />
+                    </div>
+                    {otpStep === "request" ? (
+                      <button
+                        onClick={handlePhoneOtpRequest}
+                        disabled={formLoading || !phone.trim()}
+                        className="w-full bg-[#2357FF] text-white py-3 px-4 rounded-lg hover:bg-[#1a46d9] transition font-medium disabled:opacity-50"
+                      >
+                        {formLoading ? "Sending OTP..." : "Send OTP"}
+                      </button>
+                    ) : (
+                      <div className="space-y-4">
+                        <div>
+                          <label htmlFor="otp" className="block text-sm font-medium text-gray-700 mb-2">
+                            Enter OTP
+                          </label>
+                          <input
+                            type="text"
+                            id="otp"
+                            value={otpCode}
+                            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                            placeholder="Enter 6-digit OTP"
+                            maxLength={6}
+                            required
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2357FF] focus:border-transparent outline-none transition text-center text-2xl tracking-widest"
+                          />
+                        </div>
+                        <button
+                          onClick={handlePhoneOtpVerify}
+                          disabled={formLoading || otpCode.length < 6}
+                          className="w-full bg-[#2357FF] text-white py-3 px-4 rounded-lg hover:bg-[#1a46d9] transition font-medium disabled:opacity-50"
+                        >
+                          {formLoading ? "Verifying..." : "Verify OTP"}
+                        </button>
+                        <button
+                          onClick={() => setOtpStep("request")}
+                          className="w-full text-sm text-[#2357FF] hover:underline"
+                        >
+                          Resend OTP
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Show email form only for email invites (when no phone) */}
+                {emailExists === null && !emailParam && !phoneParam && !inviteData?.phone && (
                   <form onSubmit={handleEmailSubmit} className="space-y-4">
                     <div>
                       <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
@@ -576,7 +796,8 @@ function InvitePageContent() {
                   </form>
                 )}
 
-                {(emailExists === true || emailExists === false) && (
+                {/* Show email/password tabs and forms only for email invites (not phone invites) */}
+                {(emailExists === true || emailExists === false) && !phoneParam && !inviteData?.phone && (
                   <>
                     {/* Auth Method Tabs */}
                     <div className="flex border-b border-gray-200 mb-4">
@@ -735,18 +956,19 @@ function InvitePageContent() {
                         </form>
                       )
                     ) : (
-                      // OTP Form
-                      <div className="space-y-4">
-                        {otpStep === "request" ? (
-                          <>
-                            <div>
-                              <label htmlFor="otp-email" className="block text-sm font-medium text-gray-700 mb-2">
-                                Email Address
-                              </label>
-                              <input
-                                type="email"
-                                id="otp-email"
-                                value={email}
+                      // Email OTP Form (only for email invites)
+                      !phoneParam && !inviteData?.phone && (
+                        <div className="space-y-4">
+                          {otpStep === "request" ? (
+                            <>
+                              <div>
+                                <label htmlFor="otp-email" className="block text-sm font-medium text-gray-700 mb-2">
+                                  Email Address
+                                </label>
+                                <input
+                                  type="email"
+                                  id="otp-email"
+                                  value={email}
                                 disabled
                                 className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
                               />
@@ -798,7 +1020,8 @@ function InvitePageContent() {
                             </div>
                           </>
                         )}
-                      </div>
+                        </div>
+                      )
                     )}
                   </>
                 )}

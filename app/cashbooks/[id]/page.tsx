@@ -161,18 +161,18 @@ export default function BookDetailPage() {
   const [pdfSettings, setPdfSettings] = useState({
     columns: {
       date: true,
-      time: false,
+      time: true,
       balance: true,
       paymentModes: true,
       cashIn: true,
       cashOut: true,
-      category: true,
+      category: false,
       remark: true,
-      members: true,
-      party: true,
+      members: false,
+      party: false,
     },
-    includeUserNameAndNumber: true,
-    includeAppliedFilters: true,
+    includeUserNameAndNumber: false,
+    includeAppliedFilters: false,
   });
 
   useEffect(() => {
@@ -878,10 +878,8 @@ export default function BookDetailPage() {
           }
           if (pdfSettings.columns.remark) {
             const remarks = entry.remarks || "-";
-            const truncatedRemarks = remarks === "-" || remarks.length <= 10 
-              ? remarks 
-              : remarks.substring(0, 10) + "...";
-            row.push(truncatedRemarks);
+            // Show full remark text in PDF (no truncation)
+            row.push(remarks);
           }
           if (pdfSettings.columns.party) {
             row.push(entry.party_name || "-");

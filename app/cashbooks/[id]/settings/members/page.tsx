@@ -408,7 +408,7 @@ export default function BookMembersSettingsPage() {
           if (inviteMethod === "email") {
             alert(`Invite email sent successfully to ${inviteEmail}. They will receive an email with a link to join the business as Partner.`);
           } else {
-            alert(`Invite created for ${invitePhone}. Note: SMS sending is not yet implemented, but the invite has been created.`);
+            alert(`Invite SMS sent successfully to ${invitePhone}. They will receive an SMS with a link to join the business as Partner.`);
           }
         } else {
           // Staff: can be added to cashbook directly or invited
@@ -417,6 +417,7 @@ export default function BookMembersSettingsPage() {
             const inviteData: any = {
               role: "Staff",
               businessId: book.businessId,
+              cashbookId: bookId, // Include cashbook ID from URL
             };
 
             if (inviteMethod === "email") {
@@ -445,7 +446,7 @@ export default function BookMembersSettingsPage() {
             if (inviteMethod === "email") {
               alert(`Invite email sent successfully to ${inviteEmail}. They will receive an email with a link to join as Staff. Once they join, they will be added to this cashbook.`);
             } else {
-              alert(`Invite created for ${invitePhone}. Note: SMS sending is not yet implemented, but the invite has been created.`);
+              alert(`Invite SMS sent successfully to ${invitePhone}. They will receive an SMS with a link to join as Staff. Once they join, they will be added to this cashbook.`);
             }
           } else {
             // No business - can't send invite, but can add existing users

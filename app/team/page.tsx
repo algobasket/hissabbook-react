@@ -37,11 +37,13 @@ interface Invite {
   inviterEmail: string | null;
   expiresAt: string;
   createdAt: string;
+  shortUrl?: string | null;
   updatedAt: string;
   acceptedAt: string | null;
   acceptedBy: string | null;
   acceptedUserEmail?: string | null;
   userInviteStatus?: string | null;
+  cashbookId?: string | null;
 }
 
 export default function TeamPage() {
@@ -79,6 +81,8 @@ export default function TeamPage() {
   const [businessInfo, setBusinessInfo] = useState<{ name: string; ownerId: string } | null>(null);
   const [currentUser, setCurrentUser] = useState<ReturnType<typeof getUser> | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [deletingInviteId, setDeletingInviteId] = useState<string | null>(null);
+  const [resendingInviteId, setResendingInviteId] = useState<string | null>(null);
   const addMemberModalRef = useRef<HTMLDivElement>(null);
   const rolesModalRef = useRef<HTMLDivElement>(null);
 
@@ -167,6 +171,93 @@ export default function TeamPage() {
     }
 
     setFilteredInvites(filtered);
+  };
+
+  const handleResendInvite = async (invite: Invite) => {
+    if (!selectedBusinessId) return;
+
+    try {
+      const token = getAuthToken();
+      if (!token) {
+        alert("Not authenticated");
+        return;
+      }
+
+      setResendingInviteId(invite.id);
+
+      const response = await fetch(
+        `${API_BASE}/api/businesses/${selectedBusinessId}/invites/${invite.id}/resend`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to resend invite");
+      }
+
+      const data = await response.json();
+      alert(data.message || "Invite resent successfully!");
+    } catch (err) {
+      console.error("Error resending invite:", err);
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Failed to resend invite. Please try again."
+      );
+    } finally {
+      setResendingInviteId(null);
+    }
+  };
+
+  const handleDeleteInvite = async (invite: Invite) => {
+    if (!selectedBusinessId) return;
+
+    if (!window.confirm("Are you sure you want to delete this invite?")) {
+      return;
+    }
+
+    try {
+      const token = getAuthToken();
+      if (!token) {
+        alert("Not authenticated");
+        return;
+      }
+
+      setDeletingInviteId(invite.id);
+
+      const response = await fetch(
+        `${API_BASE}/api/businesses/${selectedBusinessId}/invites/${invite.id}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to delete invite");
+      }
+
+      // Remove invite from state
+      setInvites((prev) => prev.filter((i) => i.id !== invite.id));
+      setFilteredInvites((prev) => prev.filter((i) => i.id !== invite.id));
+    } catch (err) {
+      console.error("Error deleting invite:", err);
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Failed to delete invite. Please try again."
+      );
+    } finally {
+      setDeletingInviteId(null);
+    }
   };
 
   useEffect(() => {
@@ -854,7 +945,7 @@ export default function TeamPage() {
           if (inviteMethod === "email") {
             alert(`Invite email sent successfully to ${inviteEmail}. They will receive an email with a link to join the business as ${inviteRole}.`);
           } else {
-            alert(`Invite created for ${invitePhone}. Note: SMS sending is not yet implemented, but the invite has been created.`);
+            alert(`Invite SMS sent successfully to ${invitePhone}. They will receive an SMS with a link to join the business as ${inviteRole}.`);
           }
         } catch (err) {
           console.error("Error sending invite:", err);
@@ -1075,6 +1166,108 @@ export default function TeamPage() {
                             {invite.expiresAt && !invite.acceptedUserEmail && (
                               <div className="text-slate-400">
                                 Expires: {new Date(invite.expiresAt).toLocaleDateString()}
+                              </div>
+                            )}
+                            {invite.status === "pending" && !invite.acceptedUserEmail && (
+                              <div className="mt-2 pt-2 border-t border-amber-200">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-medium text-slate-600">Invite Link:</span>
+                                    <button
+                                      onClick={() => {
+                                        const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+                                        const identifier = invite.email || invite.phone || "";
+                                        const paramName = invite.email ? "email" : "phone";
+                                        let inviteLink = `${baseUrl}/invite?token=${invite.inviteToken}&business=${invite.businessId}&${paramName}=${encodeURIComponent(identifier)}&role=${invite.role}`;
+                                        // Add cashbook ID if present
+                                        if (invite.cashbookId) {
+                                          inviteLink += `&cashbook=${invite.cashbookId}`;
+                                        }
+                                        navigator.clipboard.writeText(inviteLink).then(() => {
+                                          alert("Invite link copied to clipboard!");
+                                        }).catch(() => {
+                                          // Fallback: select text
+                                          const textArea = document.createElement("textarea");
+                                          textArea.value = inviteLink;
+                                          document.body.appendChild(textArea);
+                                          textArea.select();
+                                          document.execCommand("copy");
+                                          document.body.removeChild(textArea);
+                                          alert("Invite link copied to clipboard!");
+                                        });
+                                      }}
+                                      className="flex items-center gap-1 text-xs text-[#2357FF] hover:text-[#1a46d9] font-medium underline"
+                                    >
+                                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                      </svg>
+                                      Copy Link
+                                    </button>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      onClick={() => handleResendInvite(invite)}
+                                      disabled={resendingInviteId === invite.id}
+                                      className="inline-flex items-center rounded-md border border-blue-200 bg-white px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      {resendingInviteId === invite.id ? "Resending..." : "Resend Invite"}
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteInvite(invite)}
+                                      disabled={deletingInviteId === invite.id}
+                                      className="inline-flex items-center rounded-md border border-red-200 bg-white px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      {deletingInviteId === invite.id ? "Deleting..." : "Delete"}
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className="mt-2 space-y-1">
+                                  {invite.shortUrl && (
+                                    <div className="text-xs">
+                                      <span className="font-medium text-slate-600">Short URL (for SMS):</span>
+                                      <div className="mt-1 text-slate-400 break-all font-mono bg-blue-50 p-1 rounded border border-blue-200">
+                                        {invite.shortUrl}
+                                      </div>
+                                      <button
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(invite.shortUrl || "").then(() => {
+                                            alert("Short URL copied to clipboard!");
+                                          }).catch(() => {
+                                            const textArea = document.createElement("textarea");
+                                            textArea.value = invite.shortUrl || "";
+                                            document.body.appendChild(textArea);
+                                            textArea.select();
+                                            document.execCommand("copy");
+                                            document.body.removeChild(textArea);
+                                            alert("Short URL copied to clipboard!");
+                                          });
+                                        }}
+                                        className="mt-1 flex items-center gap-1 text-xs text-[#2357FF] hover:text-[#1a46d9] font-medium underline"
+                                      >
+                                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                        </svg>
+                                        Copy Short URL
+                                      </button>
+                                    </div>
+                                  )}
+                                  <div className="text-xs">
+                                    <span className="font-medium text-slate-600">Full Invite Link:</span>
+                                    <div className="mt-1 text-xs text-slate-400 break-all font-mono bg-white/50 p-1 rounded border border-amber-200">
+                                      {(() => {
+                                        const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+                                        const identifier = invite.email || invite.phone || "";
+                                        const paramName = invite.email ? "email" : "phone";
+                                        let inviteLink = `${baseUrl}/invite?token=${invite.inviteToken}&business=${invite.businessId}&${paramName}=${encodeURIComponent(identifier)}&role=${invite.role}`;
+                                        // Add cashbook ID if present
+                                        if (invite.cashbookId) {
+                                          inviteLink += `&cashbook=${invite.cashbookId}`;
+                                        }
+                                        return inviteLink;
+                                      })()}
+                                    </div>
+                                  </div>
+                                </div>
                               </div>
                             )}
                           </div>

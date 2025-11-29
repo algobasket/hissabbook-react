@@ -150,6 +150,25 @@ export default function AppShell({ activePath, children }: AppShellProps) {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [smallLogoUrl, setSmallLogoUrl] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+  const [userInvites, setUserInvites] = useState<
+    Array<{
+      id: string;
+      businessName: string;
+      role: string;
+      inviteToken: string;
+      businessId: string;
+      email: string | null;
+      phone: string | null;
+      status: string;
+      cashbookId?: string | null;
+      createdAt?: string;
+    }>
+  >([]);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   // Get user role and filter navigation based on role
   const navSections = useMemo(() => {
@@ -184,6 +203,52 @@ export default function AppShell({ activePath, children }: AppShellProps) {
     }
     
     return allNavSections;
+  }, [userRole]);
+
+  // Fetch invites for current user (for notifications dropdown)
+  const fetchUserInvites = async () => {
+    try {
+      setLoadingNotifications(true);
+      const token = typeof window !== "undefined" ? localStorage.getItem("authToken") : null;
+      if (!token) {
+        setUserInvites([]);
+        return;
+      }
+
+      const response = await fetch(`${API_BASE}/api/invites/my`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        console.error("Failed to fetch user invites");
+        setUserInvites([]);
+        return;
+      }
+
+      const data = await response.json();
+      const invites = data.invites || [];
+      setUserInvites(invites);
+      // Unread notifications = pending invites
+      const pendingCount = invites.filter(
+        (invite: { status: string }) =>
+          invite.status && invite.status.toLowerCase() === "pending"
+      ).length;
+      setUnreadCount(pendingCount);
+    } catch (err) {
+      console.error("Error fetching user invites:", err);
+      setUserInvites([]);
+    } finally {
+      setLoadingNotifications(false);
+    }
+  };
+
+  // Initial fetch of invites for staff users so badge shows without opening dropdown
+  useEffect(() => {
+    if (userRole === "staff") {
+      fetchUserInvites();
+    }
   }, [userRole]);
 
   // Get user info on mount
@@ -262,16 +327,29 @@ export default function AppShell({ activePath, children }: AppShellProps) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsDropdownOpen(false);
       }
+      // Close mobile sidebar when clicking outside
+      if (sidebarRef.current && !sidebarRef.current.contains(event.target as Node)) {
+        const target = event.target as HTMLElement;
+        // Don't close if clicking the menu button
+        if (!target.closest('[data-mobile-menu-button]')) {
+          setIsMobileSidebarOpen(false);
+        }
+      }
     }
 
-    if (isDropdownOpen) {
+    if (isDropdownOpen || isMobileSidebarOpen) {
       document.addEventListener("mousedown", handleClickOutside);
     }
 
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [isDropdownOpen]);
+  }, [isDropdownOpen, isMobileSidebarOpen]);
+
+  // Close mobile sidebar when route changes
+  useEffect(() => {
+    setIsMobileSidebarOpen(false);
+  }, [activePath]);
 
   const formatRoleName = (role: string | null): string => {
     if (!role) return "User";
@@ -291,7 +369,21 @@ export default function AppShell({ activePath, children }: AppShellProps) {
 
   return (
     <div className="flex min-h-screen bg-[#f5f7ff] font-sans text-[#111827]">
-      <aside className="hidden w-72 flex-shrink-0 border-r border-slate-200 bg-white px-5 py-8 lg:block">
+      {/* Mobile Sidebar Overlay */}
+      {isMobileSidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          onClick={() => setIsMobileSidebarOpen(false)}
+        />
+      )}
+
+      {/* Mobile Sidebar */}
+      <aside
+        ref={sidebarRef}
+        className={`fixed inset-y-0 left-0 z-50 w-72 flex-shrink-0 border-r border-slate-200 bg-white px-5 py-8 transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0 ${
+          isMobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
         <Link href="/" className="flex items-center gap-3 px-4 pb-8 transition-transform hover:scale-105">
           {smallLogoUrl ? (
             <img
@@ -335,6 +427,7 @@ export default function AppShell({ activePath, children }: AppShellProps) {
                     <Link
                       key={item.label}
                       href={item.href}
+                      onClick={() => setIsMobileSidebarOpen(false)}
                       className={`group flex items-center gap-3 rounded-xl px-4 py-3 transition ${
                         active ? "bg-[#2f4bff] text-white shadow-[0_8px_18px_rgba(47,75,255,0.35)]" : "hover:bg-slate-100"
                       }`}
@@ -359,158 +452,595 @@ export default function AppShell({ activePath, children }: AppShellProps) {
       </aside>
 
       <div className="flex flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-slate-200 bg-white px-8 py-4">
-          <div>
-            <h1 className="text-lg font-semibold text-[#111827]">
-              Welcome {formatRoleName(userRole)}
-            </h1>
-            <p className="text-sm text-slate-500">
-              {(userRole === "staff" || userRole?.toLowerCase() === "staff") 
-                ? "Manage payout request, cashbook and staff all in one place"
-                : "Manage all your businesses, cashbook and staff all in one place"}
-            </p>
-          </div>
-          <div className="flex items-center justify-center flex-1">
-            {(userRole === "managers" || userRole === "manager") && <BusinessSelector />}
-          </div>
-          <div className="flex items-center gap-3">
-            <button className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-[#2f4bff] transition hover:border-[#2f4bff]">
-              <span className="sr-only">Notifications</span>
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-              </svg>
-            </button>
-            <div className="relative" ref={dropdownRef}>
+        <header className="border-b border-slate-200 bg-white px-4 sm:px-8 py-3 sm:py-4">
+          {/* Mobile Layout: Stacked */}
+          <div className="lg:hidden space-y-3">
+            {/* Top Row: Menu Button + Welcome Text */}
+            <div className="flex items-start gap-3">
+              {/* Mobile Menu Button */}
               <button
-                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-[#1f2937] transition hover:border-[#2f4bff]"
+                data-mobile-menu-button
+                onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+                className="inline-flex items-center justify-center p-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors flex-shrink-0"
+                aria-label="Toggle menu"
               >
-                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#2f4bff]/10 text-sm font-semibold text-[#2f4bff]">
-                  {userInitial}
-                </span>
-                {userName}
                 <svg
-                  className={`h-4 w-4 text-slate-400 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`}
+                  className="h-6 w-6"
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="2"
                   viewBox="0 0 24 24"
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                  {isMobileSidebarOpen ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  ) : (
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                  )}
                 </svg>
               </button>
 
-              {isDropdownOpen && (
-                <div className="absolute right-0 z-50 mt-2 w-64 rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden">
-                  {/* User Info Section */}
-                  <div className="px-4 py-3 border-b border-slate-100">
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#2f4bff]/10 text-sm font-semibold text-[#2f4bff]">
-                        {userInitial}
+              <div className="flex-1 min-w-0">
+                <h1 className="text-base font-semibold text-[#111827] leading-tight">
+                  Welcome {formatRoleName(userRole)}
+                </h1>
+                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                  {(userRole === "staff" || userRole?.toLowerCase() === "staff") 
+                    ? "Manage payout request, cashbook and staff all in one place"
+                    : "Manage all your businesses, cashbook and staff all in one place"}
+                </p>
+              </div>
+            </div>
+
+            {/* Bottom Row: Business Selector + Actions */}
+            <div className="flex items-center justify-center gap-2">
+              {(userRole === "managers" || userRole === "manager") && (
+                <div className="hidden">
+                  <BusinessSelector />
+                </div>
+              )}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      const nextOpen = !isNotificationsOpen;
+                      setIsNotificationsOpen(nextOpen);
+                      if (nextOpen) {
+                        fetchUserInvites();
+                      }
+                    }}
+                    className="relative inline-flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border border-slate-200 text-[#2f4bff] transition hover:border-[#2f4bff]"
+                  >
+                    <span className="sr-only">Notifications</span>
+                    <svg className="h-4 w-4 sm:h-5 sm:w-5" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                    </svg>
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+                        {unreadCount > 9 ? "9+" : unreadCount}
                       </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold text-[#1f2937] truncate">
-                          {userName}
+                    )}
+                  </button>
+                  {isNotificationsOpen && (
+                    <>
+                      {/* Backdrop overlay for mobile */}
+                      <div 
+                        className="fixed inset-0 bg-black/20 z-40 lg:hidden"
+                        onClick={() => setIsNotificationsOpen(false)}
+                      />
+                      <div className="fixed left-1/2 -translate-x-1/2 top-[140px] sm:absolute sm:left-auto sm:right-0 sm:translate-x-0 sm:top-auto sm:mt-2 w-[90vw] sm:w-[480px] max-w-[90vw] sm:max-w-[480px] origin-top sm:origin-top-right rounded-lg sm:rounded-xl border border-slate-200 bg-white shadow-lg shadow-slate-900/10 z-50">
+                      <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 sm:px-4">
+                        <span className="text-[11px] sm:text-xs font-semibold text-slate-600">
+                          Invitations
+                        </span>
+                        {loadingNotifications && (
+                          <span className="text-[9px] sm:text-[10px] text-slate-400">Loading...</span>
+                        )}
+                      </div>
+                      <div className="max-h-[60vh] sm:max-h-96 overflow-y-auto">
+                        {userInvites.length === 0 ? (
+                          <div className="px-3 py-3 sm:px-4 sm:py-4 text-[11px] sm:text-xs text-slate-400">
+                            No invitations found for your account.
+                          </div>
+                        ) : (
+                          userInvites.map((invite) => {
+                            const baseUrl =
+                              typeof window !== "undefined"
+                                ? window.location.origin
+                                : "";
+                            const identifier = invite.email || invite.phone || "";
+                            const paramName = invite.email ? "email" : "phone";
+                            let inviteLink = `${baseUrl}/invite?token=${invite.inviteToken}&business=${invite.businessId}&${paramName}=${encodeURIComponent(
+                              identifier
+                            )}&role=${invite.role}`;
+                            if (invite.cashbookId) {
+                              inviteLink += `&cashbook=${invite.cashbookId}`;
+                            }
+                            const inviteLinkDisplay = inviteLink;
+                            return (
+                              <div
+                                key={invite.id}
+                                className="border-b border-slate-100 px-3 py-2 sm:px-4 sm:py-3 last:border-b-0"
+                              >
+                                <div className="text-[11px] sm:text-xs font-semibold text-slate-800">
+                                  {invite.businessName || "Business"}{" "}
+                                  <span className="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] sm:text-[10px] font-medium uppercase text-slate-500">
+                                    {invite.role}
+                                  </span>
+                                </div>
+                                {invite.createdAt && (
+                                  <div className="mt-0.5 text-[9px] sm:text-[10px] text-slate-400">
+                                    Invited on{" "}
+                                    {new Date(invite.createdAt).toLocaleDateString()}
+                                  </div>
+                                )}
+                                <div className="mt-1.5 sm:mt-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 sm:px-3 sm:py-2">
+                                  <div className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                    Invite Link
+                                  </div>
+                                  <div className="mt-1 text-[10px] sm:text-[11px] text-slate-700 break-all font-mono">
+                                    {inviteLinkDisplay}
+                                  </div>
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard
+                                        .writeText(inviteLink)
+                                        .then(() => {
+                                          alert("Invite link copied to clipboard!");
+                                        })
+                                        .catch(() => {
+                                          const textArea =
+                                            document.createElement("textarea");
+                                          textArea.value = inviteLink;
+                                          document.body.appendChild(textArea);
+                                          textArea.select();
+                                          document.execCommand("copy");
+                                          document.body.removeChild(textArea);
+                                          alert("Invite link copied to clipboard!");
+                                        });
+                                    }}
+                                    className="mt-1.5 sm:mt-2 inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-medium text-[#2357FF] hover:text-[#1a46d9]"
+                                  >
+                                    <svg
+                                      className="h-2.5 w-2.5 sm:h-3 sm:w-3"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                                      />
+                                    </svg>
+                                    Copy Invite Link
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                      <button
+                        onClick={() => {
+                          setIsNotificationsOpen(false);
+                          router.push("/notifications");
+                        }}
+                        className="flex w-full items-center justify-center border-t border-slate-100 px-3 py-2 sm:px-4 text-[10px] sm:text-[11px] font-medium text-[#2357FF] hover:bg-slate-50"
+                      >
+                        See all
+                      </button>
+                    </div>
+                    </>
+                  )}
+                </div>
+                <div className="relative" ref={dropdownRef}>
+                  <button
+                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                    className="flex items-center gap-1.5 sm:gap-2 rounded-full border border-slate-200 bg-white px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-[#1f2937] transition hover:border-[#2f4bff]"
+                  >
+                    <span className="inline-flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-full bg-[#2f4bff]/10 text-xs sm:text-sm font-semibold text-[#2f4bff]">
+                      {userInitial}
+                    </span>
+                    <span className="hidden sm:inline">{userName}</span>
+                    <svg
+                      className={`h-3 w-3 sm:h-4 sm:w-4 text-slate-400 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+
+                  {isDropdownOpen && (
+                    <div className="absolute right-0 z-50 mt-2 w-64 rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden">
+                      {/* User Info Section */}
+                      <div className="px-4 py-3 border-b border-slate-100">
+                        <div className="flex items-center gap-3 mb-2">
+                          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#2f4bff]/10 text-sm font-semibold text-[#2f4bff]">
+                            {userInitial}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold text-[#1f2937] truncate">
+                              {userName}
+                            </div>
+                            <div className="text-xs text-slate-500 truncate">
+                              {formatRoleName(userRole)}
+                            </div>
+                          </div>
                         </div>
-                        <div className="text-xs text-slate-500 truncate">
-                          {formatRoleName(userRole)}
+                        <Link
+                          href="/account-info"
+                          onClick={() => setIsDropdownOpen(false)}
+                          className="inline-flex items-center gap-1 text-xs font-medium text-[#2f4bff] hover:text-[#2f4bff]/80 transition-colors"
+                        >
+                          Your Profile
+                          <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                          </svg>
+                        </Link>
+                      </div>
+
+                      {/* Account Info & Settings */}
+                      <div className="py-1 border-b border-slate-100">
+                        <Link
+                          href="/account-info"
+                          onClick={() => setIsDropdownOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2 text-sm text-[#1f2937] transition hover:bg-slate-50"
+                        >
+                          <span className="flex h-5 w-5 items-center justify-center text-slate-400">
+                            {iconMap.account}
+                          </span>
+                          <span>Account Info</span>
+                        </Link>
+                        {(userRole === "managers" || userRole === "manager") && (
+                          <Link
+                            href="/settings"
+                            onClick={() => setIsDropdownOpen(false)}
+                            className="flex items-center gap-3 px-4 py-2 text-sm text-[#1f2937] transition hover:bg-slate-50"
+                          >
+                            <span className="flex h-5 w-5 items-center justify-center text-slate-400">
+                              {iconMap.settings}
+                            </span>
+                            <span>Settings</span>
+                          </Link>
+                        )}
+                      </div>
+
+                      {/* Logout */}
+                      <div className="py-1 border-b border-slate-100">
+                        <button
+                          onClick={handleLogout}
+                          className="flex w-full items-center gap-3 px-4 py-2 text-sm text-rose-600 transition hover:bg-rose-50"
+                        >
+                          <svg
+                            className="h-5 w-5"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75"
+                            />
+                          </svg>
+                          <span>Logout</span>
+                        </button>
+                      </div>
+
+                      {/* Mobile App Section */}
+                      <div className="px-4 py-3 border-b border-slate-100">
+                        <div className="text-xs font-medium text-slate-500 mb-2">Mobile App</div>
+                        <a
+                          href="#"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setIsDropdownOpen(false);
+                            // Add download app logic here
+                            alert("Mobile app download coming soon!");
+                          }}
+                          className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors group"
+                        >
+                          <svg className="h-5 w-5 text-slate-700" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3" />
+                          </svg>
+                          <span className="text-sm font-medium text-slate-700 group-hover:text-slate-900">Download App</span>
+                        </a>
+                      </div>
+
+                      {/* Copyright and Version */}
+                      <div className="px-4 py-2 bg-slate-50">
+                        <div className="text-xs text-slate-500 text-center">
+                          &copy; HissabBook • Version 1.0.0
                         </div>
                       </div>
                     </div>
-                    <Link
-                      href="/account-info"
-                      onClick={() => setIsDropdownOpen(false)}
-                      className="inline-flex items-center gap-1 text-xs font-medium text-[#2f4bff] hover:text-[#2f4bff]/80 transition-colors"
-                    >
-                      Your Profile
-                      <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                      </svg>
-                    </Link>
-                  </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
 
-                  {/* Account Info & Settings */}
-                  <div className="py-1 border-b border-slate-100">
-                    <Link
-                      href="/account-info"
-                      onClick={() => setIsDropdownOpen(false)}
-                      className="flex items-center gap-3 px-4 py-2 text-sm text-[#1f2937] transition hover:bg-slate-50"
-                    >
-                      <span className="flex h-5 w-5 items-center justify-center text-slate-400">
-                        {iconMap.account}
+          {/* Desktop Layout: Horizontal */}
+          <div className="hidden lg:flex items-center justify-between">
+            <div className="flex-1">
+              <h1 className="text-lg font-semibold text-[#111827]">
+                Welcome {formatRoleName(userRole)}
+              </h1>
+              <p className="text-sm text-slate-500 mt-1">
+                {(userRole === "staff" || userRole?.toLowerCase() === "staff") 
+                  ? "Manage payout request, cashbook and staff all in one place"
+                  : "Manage all your businesses, cashbook and staff all in one place"}
+              </p>
+            </div>
+            <div className="flex items-center justify-center flex-1">
+              {(userRole === "managers" || userRole === "manager") && <BusinessSelector />}
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <button
+                  onClick={() => {
+                    const nextOpen = !isNotificationsOpen;
+                    setIsNotificationsOpen(nextOpen);
+                    if (nextOpen) {
+                      fetchUserInvites();
+                    }
+                  }}
+                  className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-[#2f4bff] transition hover:border-[#2f4bff]"
+                >
+                  <span className="sr-only">Notifications</span>
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                  </svg>
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+                      {unreadCount > 9 ? "9+" : unreadCount}
+                    </span>
+                  )}
+                </button>
+                {isNotificationsOpen && (
+                  <div className="absolute right-0 mt-2 w-[480px] origin-top-right rounded-xl border border-slate-200 bg-white shadow-lg shadow-slate-900/10 z-20">
+                    <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2">
+                      <span className="text-xs font-semibold text-slate-600">
+                        Invitations
                       </span>
-                      <span>Account Info</span>
-                    </Link>
-                    {(userRole === "managers" || userRole === "manager") && (
+                      {loadingNotifications && (
+                        <span className="text-[10px] text-slate-400">Loading...</span>
+                      )}
+                    </div>
+                    <div className="max-h-96 overflow-y-auto">
+                      {userInvites.length === 0 ? (
+                        <div className="px-4 py-4 text-xs text-slate-400">
+                          No invitations found for your account.
+                        </div>
+                      ) : (
+                        userInvites.map((invite) => {
+                          const baseUrl =
+                            typeof window !== "undefined"
+                              ? window.location.origin
+                              : "";
+                          const identifier = invite.email || invite.phone || "";
+                          const paramName = invite.email ? "email" : "phone";
+                          let inviteLink = `${baseUrl}/invite?token=${invite.inviteToken}&business=${invite.businessId}&${paramName}=${encodeURIComponent(
+                            identifier
+                          )}&role=${invite.role}`;
+                          if (invite.cashbookId) {
+                            inviteLink += `&cashbook=${invite.cashbookId}`;
+                          }
+                          const inviteLinkDisplay = inviteLink;
+                          return (
+                            <div
+                              key={invite.id}
+                              className="border-b border-slate-100 px-4 py-3 last:border-b-0"
+                            >
+                              <div className="text-xs font-semibold text-slate-800">
+                                {invite.businessName || "Business"}{" "}
+                                <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium uppercase text-slate-500">
+                                  {invite.role}
+                                </span>
+                              </div>
+                              {invite.createdAt && (
+                                <div className="mt-0.5 text-[10px] text-slate-400">
+                                  Invited on{" "}
+                                  {new Date(invite.createdAt).toLocaleDateString()}
+                                </div>
+                              )}
+                              <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                  Invite Link
+                                </div>
+                                <div className="mt-1 text-[11px] text-slate-700 break-all font-mono">
+                                  {inviteLinkDisplay}
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard
+                                      .writeText(inviteLink)
+                                      .then(() => {
+                                        alert("Invite link copied to clipboard!");
+                                      })
+                                      .catch(() => {
+                                        const textArea =
+                                          document.createElement("textarea");
+                                        textArea.value = inviteLink;
+                                        document.body.appendChild(textArea);
+                                        textArea.select();
+                                        document.execCommand("copy");
+                                        document.body.removeChild(textArea);
+                                        alert("Invite link copied to clipboard!");
+                                      });
+                                  }}
+                                  className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-[#2357FF] hover:text-[#1a46d9]"
+                                >
+                                  <svg
+                                    className="h-3 w-3"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                                    />
+                                  </svg>
+                                  Copy Invite Link
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                    <button
+                      onClick={() => {
+                        setIsNotificationsOpen(false);
+                        router.push("/notifications");
+                      }}
+                      className="flex w-full items-center justify-center border-t border-slate-100 px-4 py-2 text-[11px] font-medium text-[#2357FF] hover:bg-slate-50"
+                    >
+                      See all
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="relative" ref={dropdownRef}>
+                <button
+                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                  className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-[#1f2937] transition hover:border-[#2f4bff]"
+                >
+                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#2f4bff]/10 text-sm font-semibold text-[#2f4bff]">
+                    {userInitial}
+                  </span>
+                  {userName}
+                  <svg
+                    className={`h-4 w-4 text-slate-400 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {isDropdownOpen && (
+                  <div className="absolute right-0 z-50 mt-2 w-64 rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden">
+                    {/* User Info Section */}
+                    <div className="px-4 py-3 border-b border-slate-100">
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#2f4bff]/10 text-sm font-semibold text-[#2f4bff]">
+                          {userInitial}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold text-[#1f2937] truncate">
+                            {userName}
+                          </div>
+                          <div className="text-xs text-slate-500 truncate">
+                            {formatRoleName(userRole)}
+                          </div>
+                        </div>
+                      </div>
                       <Link
-                        href="/settings"
+                        href="/account-info"
+                        onClick={() => setIsDropdownOpen(false)}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-[#2f4bff] hover:text-[#2f4bff]/80 transition-colors"
+                      >
+                        Your Profile
+                        <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </Link>
+                    </div>
+
+                    {/* Account Info & Settings */}
+                    <div className="py-1 border-b border-slate-100">
+                      <Link
+                        href="/account-info"
                         onClick={() => setIsDropdownOpen(false)}
                         className="flex items-center gap-3 px-4 py-2 text-sm text-[#1f2937] transition hover:bg-slate-50"
                       >
                         <span className="flex h-5 w-5 items-center justify-center text-slate-400">
-                          {iconMap.settings}
+                          {iconMap.account}
                         </span>
-                        <span>Settings</span>
+                        <span>Account Info</span>
                       </Link>
-                    )}
-                  </div>
+                      {(userRole === "managers" || userRole === "manager") && (
+                        <Link
+                          href="/settings"
+                          onClick={() => setIsDropdownOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2 text-sm text-[#1f2937] transition hover:bg-slate-50"
+                        >
+                          <span className="flex h-5 w-5 items-center justify-center text-slate-400">
+                            {iconMap.settings}
+                          </span>
+                          <span>Settings</span>
+                        </Link>
+                      )}
+                    </div>
 
-                  {/* Logout */}
-                  <div className="py-1 border-b border-slate-100">
-                    <button
-                      onClick={handleLogout}
-                      className="flex w-full items-center gap-3 px-4 py-2 text-sm text-rose-600 transition hover:bg-rose-50"
-                    >
-                      <svg
-                        className="h-5 w-5"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        viewBox="0 0 24 24"
+                    {/* Logout */}
+                    <div className="py-1 border-b border-slate-100">
+                      <button
+                        onClick={handleLogout}
+                        className="flex w-full items-center gap-3 px-4 py-2 text-sm text-rose-600 transition hover:bg-rose-50"
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75"
-                        />
-                      </svg>
-                      <span>Logout</span>
-                    </button>
-                  </div>
+                        <svg
+                          className="h-5 w-5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75"
+                          />
+                        </svg>
+                        <span>Logout</span>
+                      </button>
+                    </div>
 
-                  {/* Mobile App Section */}
-                  <div className="px-4 py-3 border-b border-slate-100">
-                    <div className="text-xs font-medium text-slate-500 mb-2">Mobile App</div>
-                    <a
-                      href="#"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        setIsDropdownOpen(false);
-                        // Add download app logic here
-                        alert("Mobile app download coming soon!");
-                      }}
-                      className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors group"
-                    >
-                      <svg className="h-5 w-5 text-slate-700" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3" />
-                      </svg>
-                      <span className="text-sm font-medium text-slate-700 group-hover:text-slate-900">Download App</span>
-                    </a>
-                  </div>
+                    {/* Mobile App Section */}
+                    <div className="px-4 py-3 border-b border-slate-100">
+                      <div className="text-xs font-medium text-slate-500 mb-2">Mobile App</div>
+                      <a
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setIsDropdownOpen(false);
+                          // Add download app logic here
+                          alert("Mobile app download coming soon!");
+                        }}
+                        className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors group"
+                      >
+                        <svg className="h-5 w-5 text-slate-700" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3" />
+                        </svg>
+                        <span className="text-sm font-medium text-slate-700 group-hover:text-slate-900">Download App</span>
+                      </a>
+                    </div>
 
-                  {/* Copyright and Version */}
-                  <div className="px-4 py-2 bg-slate-50">
-                    <div className="text-xs text-slate-500 text-center">
-                      &copy; HissabBook • Version 1.0.0
+                    {/* Copyright and Version */}
+                    <div className="px-4 py-2 bg-slate-50">
+                      <div className="text-xs text-slate-500 text-center">
+                        &copy; HissabBook • Version 1.0.0
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </header>
 
-        <main className="flex-1 bg-[#f7f9ff] px-8 py-10">
+        <main className="flex-1 bg-[#f7f9ff] px-4 sm:px-8 py-6 sm:py-10">
           <div className="mx-auto w-full">{children}</div>
         </main>
       </div>
