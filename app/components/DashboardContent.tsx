@@ -10,59 +10,14 @@ const API_BASE =
     ? "http://localhost:5000"
     : "/backend");
 
-const statCards = [
-  {
-    title: "Wallet UPI Balance",
-    value: "₹2,45,600",
-    meta: "+12.4% vs last month",
-    gradient: "from-[#2357FF] via-[#4f6dff] to-[#8aa8ff]",
-  },
-  {
-    title: "Pending Approvals",
-    value: "08 requests",
-    meta: "2 high priority",
-    gradient: "from-[#00B8A9] via-[#3cd4c9] to-[#8bf1e6]",
-  },
-  {
-    title: "Total Payout Amount",
-    value: "₹58,200",
-    meta: "Clears in 2 days",
-    gradient: "from-[#8B5CF6] via-[#a686ff] to-[#d5c4ff]",
-  },
-] as const;
+const statCardGradients = {
+  wallet: "from-[#2357FF] via-[#4f6dff] to-[#8aa8ff]",
+  pending: "from-[#00B8A9] via-[#3cd4c9] to-[#8bf1e6]",
+  payouts: "from-[#8B5CF6] via-[#a686ff] to-[#d5c4ff]",
+} as const;
 
-const recentUpdates = [
-  {
-    title: "Wallet recharge of ₹50,000 completed",
-    time: "Today • 10:24 AM",
-    accent: "bg-emerald-500/20 text-emerald-600",
-  },
-  {
-    title: "Approval required for Staff B reimbursement",
-    time: "Today • 08:10 AM",
-    accent: "bg-amber-500/20 text-amber-600",
-  },
-  {
-    title: "Payout of ₹18,400 queued for Dealer Wallet",
-    time: "Yesterday • 05:32 PM",
-    accent: "bg-[#2357FF]/10 text-[#2357FF]",
-  },
-] as const;
+// Recent updates will be fetched dynamically
 
-const quickActions = [
-  {
-    title: "Invite finance member",
-    description: "Add collaborators to manage approvals quickly.",
-  },
-  {
-    title: "Upload vendor list",
-    description: "Bulk import and auto-create vendor wallets.",
-  },
-  {
-    title: "Configure approval flow",
-    description: "Set limits and multi-step approval rules.",
-  },
-] as const;
 
 export default function DashboardContent() {
   const router = useRouter();
@@ -81,9 +36,144 @@ export default function DashboardContent() {
     totalCashOut: 0,
   });
 
+  const [staffStats, setStaffStats] = useState({
+    walletBalance: 0,
+    walletCurrency: "INR",
+    pendingApprovals: 0,
+    totalPayoutAmount: 0,
+  });
+  const [recentActivities, setRecentActivities] = useState<Array<{
+    title: string;
+    time: string;
+    accent: string;
+  }>>([]);
+
   useEffect(() => {
     fetchUserDetails();
   }, []);
+
+  const fetchStaffDashboardData = async () => {
+    try {
+      setDataLoading(true);
+      const token = getAuthToken();
+      if (!token) {
+        return;
+      }
+
+      // Fetch pending payout requests for this user / role
+      const response = await fetch(`${API_BASE}/api/payout-requests?status=pending`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const payoutRequests = data.payoutRequests || [];
+        const pendingCount = payoutRequests.length;
+        const totalAmount = payoutRequests.reduce(
+          (sum: number, req: any) => sum + (typeof req.amount === "number" ? req.amount : 0),
+          0
+        );
+
+        setStaffStats((prev) => ({
+          ...prev,
+          pendingApprovals: pendingCount,
+          totalPayoutAmount: totalAmount,
+        }));
+      }
+
+      // Fetch recent payout requests (all statuses, limit to 10 most recent)
+      const recentResponse = await fetch(`${API_BASE}/api/payout-requests`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (recentResponse.ok) {
+        const recentData = await recentResponse.json();
+        const allRequests = recentData.payoutRequests || [];
+        
+        // Sort by created_at descending and take first 5
+        const sortedRequests = [...allRequests].sort((a: any, b: any) => {
+          const dateA = new Date(a.createdAt || a.created_at || 0).getTime();
+          const dateB = new Date(b.createdAt || b.created_at || 0).getTime();
+          return dateB - dateA;
+        }).slice(0, 5);
+
+        // Format as activity items
+        const activities = sortedRequests.map((request: any) => {
+          const createdAt = new Date(request.createdAt || request.created_at);
+          const now = new Date();
+          const diffMs = now.getTime() - createdAt.getTime();
+          const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+          const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+          const diffMinutes = Math.floor(diffMs / (1000 * 60));
+
+          let timeStr = "";
+          if (diffDays === 0) {
+            if (diffHours === 0) {
+              timeStr = `Just now`;
+            } else {
+              const hours = createdAt.getHours();
+              const minutes = createdAt.getMinutes();
+              const ampm = hours >= 12 ? "PM" : "AM";
+              const hour12 = hours % 12 || 12;
+              timeStr = `Today • ${hour12.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")} ${ampm}`;
+            }
+          } else if (diffDays === 1) {
+            const hours = createdAt.getHours();
+            const minutes = createdAt.getMinutes();
+            const ampm = hours >= 12 ? "PM" : "AM";
+            const hour12 = hours % 12 || 12;
+            timeStr = `Yesterday • ${hour12.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")} ${ampm}`;
+          } else {
+            timeStr = createdAt.toLocaleDateString("en-GB", {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            });
+          }
+
+          const amount = typeof request.amount === "number" ? request.amount : 0;
+          const formattedAmount = new Intl.NumberFormat("en-IN", {
+            style: "currency",
+            currency: "INR",
+            maximumFractionDigits: 0,
+          }).format(amount);
+
+          let title = "";
+          let accent = "";
+
+          if (request.status === "pending") {
+            title = `Approval required for ${request.submittedBy || "payout request"} - ${formattedAmount}`;
+            accent = "bg-amber-500/20 text-amber-600";
+          } else if (request.status === "accepted") {
+            title = `Payout of ${formattedAmount} approved`;
+            accent = "bg-emerald-500/20 text-emerald-600";
+          } else if (request.status === "rejected") {
+            title = `Payout request of ${formattedAmount} rejected`;
+            accent = "bg-rose-500/20 text-rose-600";
+          } else {
+            title = `Payout request of ${formattedAmount} submitted`;
+            accent = "bg-[#2357FF]/10 text-[#2357FF]";
+          }
+
+          return {
+            title,
+            time: timeStr,
+            accent,
+          };
+        });
+
+        setRecentActivities(activities);
+      }
+    } catch (err) {
+      console.error("Error fetching staff dashboard data:", err);
+    } finally {
+      setDataLoading(false);
+    }
+  };
 
   // Fetch manager data when role is determined
   useEffect(() => {
@@ -288,12 +378,23 @@ export default function DashboardContent() {
           const user = getUser();
           setUserName(user?.email?.split("@")[0] || "User");
         }
+        // Capture wallet stats for staff dashboard
+        if (typeof data.walletBalance === "number") {
+          setStaffStats((prev) => ({
+            ...prev,
+            walletBalance: data.walletBalance,
+            walletCurrency: data.walletCurrency || "INR",
+          }));
+        }
+
         // Get role from account details
         if (data.role) {
           setUserRole(data.role);
           setIsManagerRole(data.role === "managers" || data.role === "manager");
           if (data.role === "managers" || data.role === "manager") {
             fetchManagerDashboardData();
+          } else {
+            fetchStaffDashboardData();
           }
         } else {
           // Fallback to localStorage
@@ -303,6 +404,8 @@ export default function DashboardContent() {
             setIsManagerRole(role === "managers" || role === "manager");
             if (role === "managers" || role === "manager") {
               fetchManagerDashboardData();
+            } else {
+              fetchStaffDashboardData();
             }
           }
         }
@@ -321,6 +424,8 @@ export default function DashboardContent() {
           setIsManagerRole(role === "managers" || role === "manager");
           if (role === "managers" || role === "manager") {
             fetchManagerDashboardData();
+          } else {
+            fetchStaffDashboardData();
           }
         }
       }
@@ -357,6 +462,41 @@ export default function DashboardContent() {
 
   const displayRole = formatRoleName(userRole);
   const isManagerUser = isManagerRole || isManager();
+
+  const displayUserName =
+    userName && userName.startsWith("phone_")
+      ? userName.replace("phone_", "")
+      : userName;
+
+  const showPhoneIcon =
+    !!displayUserName &&
+    (userName?.startsWith("phone_") || /^\d{10,}$/.test(displayUserName));
+
+  const renderUserName = () => {
+    if (!displayUserName) return "User";
+    if (!showPhoneIcon) return displayUserName;
+
+    return (
+      <span className="inline-flex items-center gap-2">
+        <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#2f4bff]/10 text-[#2f4bff]">
+          <svg
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M3 5a2 2 0 012-2h3.28a1 1 0 01.95.684l1.1 3.3a1 1 0 01-.25 1.02l-1.7 1.7a11.05 11.05 0 005.18 5.18l1.7-1.7a1 1 0 011.02-.25l3.3 1.1a1 1 0 01.684.95V19a2 2 0 01-2 2h-1C9.82 21 3 14.18 3 6V5z"
+            />
+          </svg>
+        </span>
+        <span>{displayUserName}</span>
+      </span>
+    );
+  };
 
   // Manager Dashboard
   if (isManagerUser) {
@@ -406,13 +546,13 @@ export default function DashboardContent() {
     ];
 
     return (
-      <div className="flex max-w-6xl flex-col gap-10">
+      <div className="flex w-full flex-col gap-10">
         <section className="rounded-[40px] border border-white/50 bg-white/80 p-10 shadow-[0_45px_90px_rgba(35,87,255,0.12)] backdrop-blur">
           <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.4em] text-[#2357FF]/90">Overview</p>
               <h1 className="mt-3 text-3xl font-semibold text-[#111827]">
-                Welcome back, {userName || "User"}
+                Welcome back, {renderUserName()}
               </h1>
               {displayRole && (
                 <p className="mt-1 text-sm font-medium text-[#2357FF]">
@@ -609,14 +749,51 @@ export default function DashboardContent() {
   }
 
   // Regular Dashboard (for non-managers)
+  const walletDisplay =
+    typeof staffStats.walletBalance === "number"
+      ? new Intl.NumberFormat("en-IN", {
+          style: "currency",
+          currency: staffStats.walletCurrency || "INR",
+          maximumFractionDigits: 0,
+        }).format(staffStats.walletBalance)
+      : "₹0";
+
+  const staffStatCards = [
+    {
+      title: "Wallet UPI Balance",
+      value: walletDisplay,
+      meta: "Current wallet balance",
+      gradient: statCardGradients.wallet,
+    },
+    {
+      title: "Pending Approvals",
+      value: `${staffStats.pendingApprovals.toString().padStart(2, "0")} requests`,
+      meta:
+        staffStats.pendingApprovals > 0
+          ? `${staffStats.pendingApprovals} pending approval${staffStats.pendingApprovals > 1 ? "s" : ""}`
+          : "No pending approvals",
+      gradient: statCardGradients.pending,
+    },
+    {
+      title: "Total Payout Amount",
+      value: new Intl.NumberFormat("en-IN", {
+        style: "currency",
+        currency: "INR",
+        maximumFractionDigits: 0,
+      }).format(staffStats.totalPayoutAmount || 0),
+      meta: "Sum of pending payout requests",
+      gradient: statCardGradients.payouts,
+    },
+  ];
+
   return (
-    <div className="flex max-w-6xl flex-col gap-10">
+    <div className="flex w-full flex-col gap-10">
       <section className="rounded-[40px] border border-white/50 bg-white/80 p-10 shadow-[0_45px_90px_rgba(35,87,255,0.12)] backdrop-blur">
         <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.4em] text-[#2357FF]/90">Overview</p>
             <h1 className="mt-3 text-3xl font-semibold text-[#111827]">
-              Welcome back, {userName || "User"}
+              Welcome back, {renderUserName()}
             </h1>
             {displayRole && (
               <p className="mt-1 text-sm font-medium text-[#2357FF]">
@@ -629,15 +806,12 @@ export default function DashboardContent() {
           </div>
           <div className="flex flex-wrap gap-3">
             <button className="rounded-full bg-[#2357FF] px-5 py-2 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(35,87,255,0.25)] transition hover:-translate-y-0.5">
-              Activate Payments
-            </button>
-            <button className="rounded-full border border-[#2357FF]/30 bg-white px-5 py-2 text-sm font-semibold text-[#2357FF] transition hover:border-[#2357FF]/60">
-              Export Report
+              UPI Sync Connect
             </button>
           </div>
         </div>
         <div className="mt-8 grid gap-6 md:grid-cols-3">
-          {statCards.map((card) => (
+          {staffStatCards.map((card) => (
             <div key={card.title} className={`rounded-[32px] bg-gradient-to-br ${card.gradient} p-[1px] shadow-lg`}>
               <div className="flex h-full w-full flex-col gap-4 rounded-[30px] bg-white/85 p-6">
                 <div className="flex.items-center justify-between">
@@ -652,60 +826,51 @@ export default function DashboardContent() {
         </div>
       </section>
 
-      <div className="grid gap-10 lg:grid-cols-[1.2fr_0.8fr]">
+      <div className="space-y-10">
         <section className="rounded-[36px] border border-white/50 bg-white/80 p-8 shadow-[0_30px_60px_rgba(35,87,255,0.1)] backdrop-blur">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold text-[#111827]">Recent activity</h2>
               <p className="text-sm text-slate-500">Latest wallet, approval and payout updates.</p>
             </div>
-            <button className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-500 transition hover:border-[#2357FF]/60 hover:text-[#2357FF]">
+            <button 
+              onClick={() => router.push("/approvals")}
+              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-500 transition hover:border-[#2357FF]/60 hover:text-[#2357FF]"
+            >
               View all
             </button>
           </div>
           <div className="mt-6 space-y-4">
-            {recentUpdates.map((update) => (
-              <div
-                key={update.title}
-                className="flex.items-start gap-3 rounded-3xl border border-slate-100 bg-white/90 p-4 shadow-sm"
-              >
-                <span className={`mt-1 inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${update.accent}`}>
-                  •
-                </span>
-                <div className="space-y-1">
-                  <p className="text-sm font-semibold text-[#111827]">{update.title}</p>
-                  <p className="text-xs text-slate-500">{update.time}</p>
-                </div>
+            {dataLoading ? (
+              <div className="py-8 text-center text-sm text-slate-500">
+                Loading recent activities...
               </div>
-            ))}
+            ) : recentActivities.length > 0 ? (
+              recentActivities.map((update, index) => (
+                <div
+                  key={`${update.title}-${index}`}
+                  className="flex items-start gap-3 rounded-3xl border border-slate-100 bg-white/90 p-4 shadow-sm"
+                >
+                  <span className={`mt-1 inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${update.accent}`}>
+                    •
+                  </span>
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-[#111827]">{update.title}</p>
+                    <p className="text-xs text-slate-500">{update.time}</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="py-8 text-center text-sm text-slate-500">
+                No recent activities found.
+              </div>
+            )}
           </div>
         </section>
 
-        <aside className="space-y-6">
-          <div className="rounded-[32px] border border-white/50 bg-white/85 p-8 shadow-[0_30px_60px_rgba(35,87,255,0.1)] backdrop-blur">
-            <h3 className="text-base font-semibold text-[#111827]">Quick actions</h3>
-            <p className="mt-1 text-sm text-slate-500">Save time by jumping straight to frequent workflows.</p>
-            <div className="mt-6 space-y-4">
-              {quickActions.map((action) => (
-                <button
-                  key={action.title}
-                  type="button"
-                  className="group flex w-full items-center gap-4 rounded-2xl border border-[#2357FF]/20 bg-white/90 px-5 py-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[#2357FF]/40"
-                >
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#2357FF]/10 text-[#2357FF]">★</span>
-                  <span>
-                    <span className="block text-sm font-semibold text-[#111827] group-hover:text-[#2357FF]">{action.title}</span>
-                    <span className="text-xs text-slate-500">{action.description}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-[32px] border border-[#2357FF]/20 bg-gradient-to-br from-[#2357FF]/15 to-white/90 p-6 text-sm text-[#2357FF] shadow-[0_20px_40px_rgba(35,87,255,0.12)]">
-            Stay compliant with RBI &amp; NPCI guidelines. Complete KYC for every wallet before sending payouts.
-          </div>
-        </aside>
+        <div className="rounded-[32px] border border-[#2357FF]/20 bg-gradient-to-br from-[#2357FF]/15 to-white/90 p-6 text-sm text-[#2357FF] shadow-[0_20px_40px_rgba(35,87,255,0.12)]">
+          Stay compliant with RBI &amp; NPCI guidelines. Complete KYC for every wallet before sending payouts.
+        </div>
       </div>
     </div>
   );

@@ -840,7 +840,10 @@ export default function BookDetailPage() {
             row.push(date);
           }
           if (data.filterType === "party" && pdfSettings.columns.party) {
-            row.push(entry.party_name || "-");
+            const partyDisplay = entry.party_name && entry.party_name.startsWith("phone_") 
+              ? "via phone" 
+              : (entry.party_name || "-");
+            row.push(partyDisplay);
           }
           if (data.filterType === "category" && pdfSettings.columns.category) {
             row.push(entry.category_name || "-");
@@ -882,7 +885,10 @@ export default function BookDetailPage() {
             row.push(remarks);
           }
           if (pdfSettings.columns.party) {
-            row.push(entry.party_name || "-");
+            const partyDisplay = entry.party_name && entry.party_name.startsWith("phone_") 
+              ? "via phone" 
+              : (entry.party_name || "-");
+            row.push(partyDisplay);
           }
           if (pdfSettings.columns.category) {
             row.push(entry.category_name || "-");
@@ -2045,9 +2051,27 @@ export default function BookDetailPage() {
                           const ampm = hour24 >= 12 ? 'PM' : 'AM';
                           formattedTime = `${hour12.toString().padStart(2, '0')}:${minutes} ${ampm}`;
                         }
-                        const createdByName = entry.created_by_first_name || entry.created_by_last_name
-                          ? `${entry.created_by_first_name || ""} ${entry.created_by_last_name || ""}`.trim()
-                          : entry.created_by_email?.split("@")[0] || "Unknown";
+
+                        // Determine attribution text shown under remarks
+                        let attributionLabel = "by";
+                        let attributionValue: string | null = null;
+
+                        if (entry.created_by_first_name || entry.created_by_last_name) {
+                          attributionValue = `${entry.created_by_first_name || ""} ${entry.created_by_last_name || ""}`.trim();
+                        } else if (entry.created_by_email) {
+                          const emailName = entry.created_by_email.split("@")[0] || "";
+                          // For phone-based temp emails (phone_918800580884@...), show the cashbook name instead
+                          if (emailName.startsWith("phone_") && book?.name) {
+                            attributionLabel = "for";
+                            attributionValue = book.name;
+                          } else {
+                            attributionValue = emailName || "Unknown";
+                          }
+                        } else if (book?.name) {
+                          // Fallback: show cashbook name if available
+                          attributionLabel = "for";
+                          attributionValue = book.name;
+                        }
 
                         return (
                           <tr 
@@ -2088,8 +2112,10 @@ export default function BookDetailPage() {
                               <div className="max-w-xs truncate" title={entry.remarks || ""}>
                                 {entry.remarks || "-"}
                               </div>
-                              {createdByName && (
-                                <div className="text-xs text-slate-400">by {createdByName}</div>
+                              {attributionValue && (
+                                <div className="text-xs text-slate-400">
+                                  {attributionLabel} {attributionValue}
+                                </div>
                               )}
                             </td>
                             <td className="whitespace-nowrap px-4 py-3">
@@ -2103,7 +2129,11 @@ export default function BookDetailPage() {
                                 {entry.entry_type === "cash_in" ? "Cash In" : "Cash Out"}
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-sm text-slate-600">{entry.party_name || "-"}</td>
+                            <td className="px-4 py-3 text-sm text-slate-600">
+                              {entry.party_name && entry.party_name.startsWith("phone_") 
+                                ? "via phone" 
+                                : (entry.party_name || "-")}
+                            </td>
                             <td className="px-4 py-3 text-sm text-slate-600">{entry.category_name || "-"}</td>
                             <td className="px-4 py-3 text-sm text-slate-600">{entry.payment_mode || "-"}</td>
                             <td
@@ -4516,7 +4546,11 @@ export default function BookDetailPage() {
                                       )}
                                       {exportFilterType === "party" && (
                                         <>
-                                          <td className="py-2 px-3 text-slate-700">{entry.party_name || "-"}</td>
+                                          <td className="py-2 px-3 text-slate-700">
+                                            {entry.party_name && entry.party_name.startsWith("phone_") 
+                                              ? "via phone" 
+                                              : (entry.party_name || "-")}
+                                          </td>
                                           <td className="py-2 px-3 text-right text-green-600">{entry.cash_in || 0}</td>
                                           <td className="py-2 px-3 text-right text-red-600">{entry.cash_out || 0}</td>
                                           <td className={`py-2 px-3 text-right ${(entry.balance || 0) < 0 ? 'text-red-600' : 'text-green-600'}`}>{entry.balance || 0}</td>
@@ -4574,7 +4608,11 @@ export default function BookDetailPage() {
                                           )}
                                         </div>
                                       </td>
-                                      <td className="py-2 px-3 text-slate-700">{entry.party_name || "-"}</td>
+                                      <td className="py-2 px-3 text-slate-700">
+                                        {entry.party_name && entry.party_name.startsWith("phone_") 
+                                          ? "via phone" 
+                                          : (entry.party_name || "-")}
+                                      </td>
                                       <td className="py-2 px-3 text-slate-700">{entry.category_name || "-"}</td>
                                       <td className="py-2 px-3 text-slate-700">{entry.payment_mode || "-"}</td>
                                       <td className="py-2 px-3 text-right text-green-600">

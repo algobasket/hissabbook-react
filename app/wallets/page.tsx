@@ -13,6 +13,8 @@ interface WalletDetails {
   upiId: string | null;
   upiQrCode: string | null;
   role: string | null;
+  walletBalance: number | null;
+  walletCurrency: string | null;
 }
 
 export default function WalletsPage() {
@@ -23,6 +25,8 @@ export default function WalletsPage() {
     upiId: null,
     upiQrCode: null,
     role: null,
+    walletBalance: null,
+    walletCurrency: "INR",
   });
 
   useEffect(() => {
@@ -55,6 +59,8 @@ export default function WalletsPage() {
         upiId: data.upiId || null,
         upiQrCode: data.upiQrCode || null,
         role: data.role || null,
+        walletBalance: typeof data.walletBalance === "number" ? data.walletBalance : null,
+        walletCurrency: data.walletCurrency || "INR",
       });
       setError(null);
     } catch (err) {
@@ -71,6 +77,15 @@ export default function WalletsPage() {
   };
 
   const walletType = formatRoleName(walletDetails.role) + " WALLET";
+
+  const formattedBalance =
+    typeof walletDetails.walletBalance === "number"
+      ? new Intl.NumberFormat("en-IN", {
+          style: "currency",
+          currency: walletDetails.walletCurrency || "INR",
+          maximumFractionDigits: 0,
+        }).format(walletDetails.walletBalance)
+      : "₹0";
 
   if (loading) {
     return (
@@ -111,8 +126,10 @@ export default function WalletsPage() {
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <span className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">Wallet UPI Balance</span>
-                <p className="mt-2 text-2xl font-semibold text-[#2f4bff]">₹2,45,600</p>
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">{walletType} • updated 5 min ago</p>
+                <p className="mt-2 text-2xl font-semibold text-[#2f4bff]">{formattedBalance}</p>
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                  {walletType} • balance from user wallet
+                </p>
               </div>
               <div 
                 className="flex h-40 w-40 items-center justify-center rounded-2xl border border-slate-200 bg-[#f8faff] overflow-hidden cursor-pointer transition hover:border-[#2f4bff] hover:shadow-md"
