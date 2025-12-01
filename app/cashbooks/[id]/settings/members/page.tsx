@@ -31,6 +31,7 @@ interface Book {
   currencyCode: string;
   ownerId: string;
   businessId: string | null;
+  staffCashinCashoutEnabled?: boolean;
 }
 
 export default function BookMembersSettingsPage() {
@@ -739,6 +740,71 @@ export default function BookMembersSettingsPage() {
 
           {error && (
             <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">{error}</div>
+          )}
+
+          {/* Cash In/Cash Out Toggle Section - Only for Managers */}
+          {isManagerOrAdmin() && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-6">
+              <div className="mb-4">
+                <h2 className="text-lg font-semibold text-[#1f2937]">Staff Permissions</h2>
+                <p className="mt-1 text-sm text-slate-500">Control whether staff members can create Cash In and Cash Out entries.</p>
+              </div>
+              
+              <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex-1">
+                  <h3 className="text-base font-medium text-[#1f2937]">Allow Staff to Create Cash In/Cash Out</h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {book?.staffCashinCashoutEnabled 
+                      ? "Staff members can create Cash In and Cash Out entries in this cashbook."
+                      : "Staff members cannot create Cash In and Cash Out entries. Only managers can create entries."}
+                  </p>
+                </div>
+                <label className="relative inline-flex cursor-pointer items-center">
+                  <input
+                    type="checkbox"
+                    checked={book?.staffCashinCashoutEnabled || false}
+                    onChange={async (e) => {
+                      const newValue = e.target.checked;
+                      try {
+                        const token = getAuthToken();
+                        if (!token) {
+                          setError("Not authenticated");
+                          return;
+                        }
+
+                        const response = await fetch(`${API_BASE}/api/books/${bookId}`, {
+                          method: "PATCH",
+                          headers: {
+                            Authorization: `Bearer ${token}`,
+                            "Content-Type": "application/json",
+                          },
+                          body: JSON.stringify({
+                            staffCashinCashoutEnabled: newValue,
+                          }),
+                        });
+
+                        if (response.ok) {
+                          const data = await response.json();
+                          setBook(data.book);
+                        } else {
+                          const errorData = await response.json().catch(() => ({ message: "Failed to update setting" }));
+                          setError(errorData.message || "Failed to update setting");
+                          // Revert the checkbox
+                          e.target.checked = !newValue;
+                        }
+                      } catch (err) {
+                        console.error("Error updating setting:", err);
+                        setError("Failed to update setting");
+                        // Revert the checkbox
+                        e.target.checked = !newValue;
+                      }
+                    }}
+                    className="peer sr-only"
+                  />
+                  <div className="peer h-6 w-11 rounded-full bg-slate-300 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-[#2f4bff] peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#2f4bff]/20"></div>
+                </label>
+              </div>
+            </div>
           )}
 
           {/* Members Section */}

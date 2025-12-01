@@ -21,6 +21,7 @@ interface Book {
   ownerId: string;
   totalBalance: number;
   masterWalletBalance: number;
+  staffCashinCashoutEnabled?: boolean;
 }
 
 export default function BookDetailPage() {
@@ -1731,30 +1732,46 @@ export default function BookDetailPage() {
                   </div>
                 </div>
                 <div className="flex gap-3">
-                  <button
-                    onClick={() => {
-                      setEntryType("cash_in");
-                      setShowCashEntryModal(true);
-                    }}
-                    className="flex items-center gap-2 rounded-lg bg-emerald-600 px-6 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 transition"
-                  >
-                    <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                    </svg>
-                    Cash In
-                  </button>
-                  <button
-                    onClick={() => {
-                      setEntryType("cash_out");
-                      setShowCashEntryModal(true);
-                    }}
-                    className="flex items-center gap-2 rounded-lg bg-red-600 px-6 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 transition"
-                  >
-                    <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
-                    </svg>
-                    Cash Out
-                  </button>
+                  {/* Show buttons only if user is manager/admin OR if staff and toggle is enabled */}
+                  {(() => {
+                    const userRole = getUserRole();
+                    const isManagerOrAdmin = userRole === "managers" || userRole === "manager" || isAdmin();
+                    const isStaff = userRole === "staff" || userRole === "agents";
+                    const canShowButtons = isManagerOrAdmin || (isStaff && book?.staffCashinCashoutEnabled);
+                    
+                    if (!canShowButtons) {
+                      return null;
+                    }
+                    
+                    return (
+                      <>
+                        <button
+                          onClick={() => {
+                            setEntryType("cash_in");
+                            setShowCashEntryModal(true);
+                          }}
+                          className="flex items-center gap-2 rounded-lg bg-emerald-600 px-6 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 transition"
+                        >
+                          <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                          </svg>
+                          Cash In
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEntryType("cash_out");
+                            setShowCashEntryModal(true);
+                          }}
+                          className="flex items-center gap-2 rounded-lg bg-red-600 px-6 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 transition"
+                        >
+                          <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
+                          </svg>
+                          Cash Out
+                        </button>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
