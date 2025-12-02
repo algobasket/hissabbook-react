@@ -244,6 +244,7 @@ export default function ApprovalsPage() {
                       <th className="px-4 py-3">Request #</th>
                       <th className="px-4 py-3">Submitted By</th>
                       <th className="px-4 py-3">Amount</th>
+                      <th className="px-4 py-3">Remark</th>
                       <th className="px-4 py-3">UTR / Reference</th>
                       <th className="px-4 py-3">Screenshot</th>
                       <th className="px-4 py-3">Status</th>
@@ -255,7 +256,7 @@ export default function ApprovalsPage() {
                   <tbody className="divide-y divide-slate-100 bg-white text-slate-600">
                     {payoutRequests.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
+                        <td colSpan={10} className="px-4 py-8 text-center text-slate-500">
                           No payout requests found
                         </td>
                       </tr>
@@ -298,6 +299,11 @@ export default function ApprovalsPage() {
                             </td>
                             <td className="px-4 py-4 font-semibold text-dark">
                               {formatAmount(request.amount)}
+                            </td>
+                            <td className="px-4 py-4 max-w-xs">
+                              <div className="truncate" title={request.remarks || ""}>
+                                {request.remarks || "-"}
+                              </div>
                             </td>
                             <td className="px-4 py-4">{request.utr}</td>
                             <td className="px-4 py-4">
