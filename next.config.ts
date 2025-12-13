@@ -16,40 +16,9 @@ const nextConfig: NextConfig = {
     optimizeCss: true,
   },
   
-  // Webpack optimizations
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      config.optimization = {
-        ...config.optimization,
-        moduleIds: 'deterministic',
-        runtimeChunk: 'single',
-        splitChunks: {
-          chunks: 'all',
-          cacheGroups: {
-            default: false,
-            vendors: false,
-            // Vendor chunk
-            vendor: {
-              name: 'vendor',
-              chunks: 'all',
-              test: /node_modules/,
-              priority: 20,
-            },
-            // Common chunk
-            common: {
-              name: 'common',
-              minChunks: 2,
-              chunks: 'all',
-              priority: 10,
-              reuseExistingChunk: true,
-              enforce: true,
-            },
-          },
-        },
-      };
-    }
-    return config;
-  },
+  // Note: Removed webpack config - Next.js 16 uses Turbopack by default
+  // Turbopack automatically handles code splitting and optimizations
+  // If you need webpack-specific config, use: npm run build -- --webpack
 };
 
 export default nextConfig;
