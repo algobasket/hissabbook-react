@@ -14,6 +14,8 @@ export default function HomePage() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
   const [isDemoModalOpen, setIsDemoModalOpen] = useState(false);
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [smallLogoUrl, setSmallLogoUrl] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     fullName: "",
@@ -56,7 +58,7 @@ export default function HomePage() {
     fetchSmallLogo();
   }, []);
 
-  // Handle ESC key to close modals
+  // Handle ESC key to close modals and mobile menu
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -66,17 +68,25 @@ export default function HomePage() {
         if (isDemoModalOpen) {
           setIsDemoModalOpen(false);
         }
+        if (isDownloadModalOpen) {
+          setIsDownloadModalOpen(false);
+        }
+        if (isMobileMenuOpen) {
+          setIsMobileMenuOpen(false);
+        }
       }
     };
-    if (isVideoModalOpen || isDemoModalOpen) {
+    if (isVideoModalOpen || isDemoModalOpen || isDownloadModalOpen || isMobileMenuOpen) {
       document.addEventListener("keydown", handleEscape);
-      document.body.style.overflow = "hidden";
+      if (isVideoModalOpen || isDemoModalOpen || isDownloadModalOpen) {
+        document.body.style.overflow = "hidden";
+      }
     }
     return () => {
       document.removeEventListener("keydown", handleEscape);
       document.body.style.overflow = "unset";
     };
-  }, [isVideoModalOpen, isDemoModalOpen]);
+  }, [isVideoModalOpen, isDemoModalOpen, isDownloadModalOpen, isMobileMenuOpen]);
 
   // Handle phone number formatting
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -202,31 +212,121 @@ export default function HomePage() {
             >
               Login/Register
             </Link>
-            <button className="group relative overflow-hidden rounded-full border-2 border-primary/20 bg-gradient-to-r from-primary to-primary/90 px-6 py-2.5 text-white shadow-lg shadow-primary/30 transition-all hover:scale-105 hover:border-primary hover:shadow-xl hover:shadow-primary/40">
+            <button 
+              onClick={() => setIsDownloadModalOpen(true)}
+              className="group relative overflow-hidden rounded-full border-2 border-primary/20 bg-gradient-to-r from-primary to-primary/90 px-6 py-2.5 text-white shadow-lg shadow-primary/30 transition-all hover:scale-105 hover:border-primary hover:shadow-xl hover:shadow-primary/40"
+            >
               <span className="relative z-10">Download App</span>
               <div className="absolute inset-0 -z-0 bg-gradient-to-r from-primary/90 to-primary opacity-0 transition-opacity group-hover:opacity-100"></div>
             </button>
           </div>
           <button
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 transition-colors hover:border-primary hover:bg-primary/5 lg:hidden"
-            aria-label="Open Menu"
+            aria-label={isMobileMenuOpen ? "Close Menu" : "Open Menu"}
           >
-            <svg
-              className="h-6 w-6 text-slate-600"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M4 6h16M4 12h16M4 18h16"
-              />
-            </svg>
+            {isMobileMenuOpen ? (
+              <svg
+                className="h-6 w-6 text-slate-600"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            ) : (
+              <svg
+                className="h-6 w-6 text-slate-600"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M4 6h16M4 12h16M4 18h16"
+                />
+              </svg>
+            )}
           </button>
         </div>
       </header>
+
+      {/* Mobile Menu */}
+      {isMobileMenuOpen && (
+        <div className="fixed inset-0 top-[73px] z-40 bg-white lg:hidden animate-fade-in">
+          <div className="flex flex-col border-t border-slate-200 bg-white">
+            <nav className="flex flex-col px-6 py-4 space-y-1">
+              <Link
+                href="/"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="px-4 py-3 rounded-lg text-base font-medium text-slate-700 transition-colors hover:bg-primary/5 hover:text-primary"
+              >
+                Home
+              </Link>
+              <Link
+                href="/customers"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="px-4 py-3 rounded-lg text-base font-medium text-slate-700 transition-colors hover:bg-primary/5 hover:text-primary"
+              >
+                Customers
+              </Link>
+              <Link
+                href="/pricing"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="px-4 py-3 rounded-lg text-base font-medium text-slate-700 transition-colors hover:bg-primary/5 hover:text-primary"
+              >
+                Pricing
+              </Link>
+              <Link
+                href="/security"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="px-4 py-3 rounded-lg text-base font-medium text-slate-700 transition-colors hover:bg-primary/5 hover:text-primary"
+              >
+                Security
+              </Link>
+              <Link
+                href="/book-keeping"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="px-4 py-3 rounded-lg text-base font-medium text-slate-700 transition-colors hover:bg-primary/5 hover:text-primary"
+              >
+                Book Keeping
+              </Link>
+              <Link
+                href="/about"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="px-4 py-3 rounded-lg text-base font-medium text-slate-700 transition-colors hover:bg-primary/5 hover:text-primary"
+              >
+                About Us
+              </Link>
+            </nav>
+            <div className="px-6 py-4 space-y-3 border-t border-slate-200">
+              <Link
+                href="/login"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="block w-full text-center px-4 py-3 rounded-lg text-base font-semibold text-slate-600 transition-colors hover:bg-slate-50 hover:text-primary"
+              >
+                Login/Register
+              </Link>
+              <button
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  setIsDownloadModalOpen(true);
+                }}
+                className="w-full rounded-full border-2 border-primary/20 bg-gradient-to-r from-primary to-primary/90 px-6 py-3 text-base font-semibold text-white shadow-lg shadow-primary/30 transition-all hover:scale-105 hover:border-primary hover:shadow-xl hover:shadow-primary/40"
+              >
+                Download App
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main>
         {/* Hero Section */}
@@ -1549,6 +1649,140 @@ export default function HomePage() {
                   </div>
                   <span className="text-xs font-bold text-slate-500">4.8/5</span>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Download App Modal */}
+      {isDownloadModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          onClick={() => setIsDownloadModalOpen(false)}
+        >
+          <div
+            className="relative mx-4 w-full max-w-md rounded-2xl bg-white shadow-2xl animate-fade-in-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close Button */}
+            <button
+              onClick={() => setIsDownloadModalOpen(false)}
+              className="absolute -right-4 -top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white text-slate-600 shadow-lg transition-all hover:scale-110 hover:bg-slate-100 hover:text-slate-900"
+              aria-label="Close modal"
+            >
+              <svg
+                className="h-6 w-6"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+
+            {/* Modal Content */}
+            <div className="p-8 md:p-10">
+              <h2 className="mb-2 text-2xl font-bold text-slate-900 text-center">
+                Download HissabBook App
+              </h2>
+              <p className="mb-8 text-center text-sm text-slate-600">
+                Choose your platform to download
+              </p>
+
+              {/* Download Buttons */}
+              <div className="flex flex-col gap-4">
+                {/* Google Play Button */}
+                <a
+                  href="#"
+                  className="group relative flex items-center gap-4 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-6 py-4 shadow-xl shadow-slate-900/30 transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-slate-900/40"
+                >
+                  <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-white/10 to-transparent opacity-0 transition-opacity group-hover:opacity-100"></div>
+                  <div className="relative flex items-center gap-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 backdrop-blur-sm transition-transform group-hover:scale-110 group-hover:rotate-3">
+                      <svg
+                        className="h-7 w-7 text-white"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                      >
+                        <path d="M3 20.5V3.5C3 2.91 3.34 2.39 3.84 2.15L13.69 12L3.84 21.85C3.34 21.6 3 21.09 3 20.5ZM16.81 15.12L6.05 21.34L14.54 12.85L16.81 15.12ZM20.16 10.81C20.5 11.08 20.75 11.5 20.75 12C20.75 12.5 20.53 12.9 20.18 13.18L17.89 14.5L15.39 12L17.89 9.5L20.16 10.81ZM6.05 2.66L16.81 8.88L14.54 11.15L6.05 2.66Z" />
+                      </svg>
+                    </div>
+                    <div className="flex flex-col text-left">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-white/70 leading-tight">
+                        GET IT ON
+                      </span>
+                      <span className="text-lg font-extrabold text-white leading-tight">
+                        Google Play
+                      </span>
+                    </div>
+                  </div>
+                </a>
+
+                {/* App Store Button */}
+                <a
+                  href="#"
+                  className="group relative flex items-center gap-4 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-6 py-4 shadow-xl shadow-slate-900/30 transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-slate-900/40"
+                >
+                  <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-white/10 to-transparent opacity-0 transition-opacity group-hover:opacity-100"></div>
+                  <div className="relative flex items-center gap-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 backdrop-blur-sm transition-transform group-hover:scale-110 group-hover:-rotate-3">
+                      <svg
+                        className="h-7 w-7 text-white"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                      >
+                        <path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
+                      </svg>
+                    </div>
+                    <div className="flex flex-col text-left">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-white/70 leading-tight">
+                        Download on the
+                      </span>
+                      <span className="text-lg font-extrabold text-white leading-tight">
+                        App Store
+                      </span>
+                    </div>
+                  </div>
+                </a>
+
+                {/* Download APK Button */}
+                <a
+                  href="#"
+                  className="group relative flex items-center gap-4 rounded-2xl bg-gradient-to-br from-primary via-primary/95 to-primary px-6 py-4 shadow-xl shadow-primary/40 ring-2 ring-primary/20 transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-primary/50 hover:ring-primary/40"
+                >
+                  <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-white/20 to-transparent opacity-0 transition-opacity group-hover:opacity-100"></div>
+                  <div className="relative flex items-center gap-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm transition-transform group-hover:scale-110 group-hover:rotate-12">
+                      <svg
+                        className="h-7 w-7 text-white"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"
+                        />
+                      </svg>
+                    </div>
+                    <div className="flex flex-col text-left">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-white/90 leading-tight">
+                        DIRECT DOWNLOAD
+                      </span>
+                      <span className="text-lg font-extrabold text-white leading-tight">
+                        Download APK
+                      </span>
+                    </div>
+                  </div>
+                </a>
               </div>
             </div>
           </div>
