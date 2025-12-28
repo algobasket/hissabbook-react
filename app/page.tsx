@@ -17,6 +17,11 @@ export default function HomePage() {
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [smallLogoUrl, setSmallLogoUrl] = useState<string | null>(null);
+  const [downloadLinks, setDownloadLinks] = useState({
+    googlePlayUrl: null as string | null,
+    appStoreUrl: null as string | null,
+    apkDownloadUrl: null as string | null,
+  });
   const [formData, setFormData] = useState({
     fullName: "",
     phone: "+91 ",
@@ -36,9 +41,9 @@ export default function HomePage() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Fetch small logo from site settings
+  // Fetch small logo and download links from site settings
   useEffect(() => {
-    const fetchSmallLogo = async () => {
+    const fetchSiteSettings = async () => {
       try {
         const response = await fetch(`${API_BASE}/api/settings/site/public`);
         if (response.ok) {
@@ -49,13 +54,25 @@ export default function HomePage() {
               : `${API_BASE}/uploads/${siteSettings.smallLogoUrl}`;
             setSmallLogoUrl(logoUrl);
           }
+          // Set download links
+          // Construct full APK URL if it's just a filename
+          let apkUrl = siteSettings.apkDownloadUrl || null;
+          if (apkUrl && !apkUrl.startsWith('http')) {
+            apkUrl = `${API_BASE}/uploads/${apkUrl}`;
+          }
+          
+          setDownloadLinks({
+            googlePlayUrl: siteSettings.googlePlayUrl || null,
+            appStoreUrl: siteSettings.appStoreUrl || null,
+            apkDownloadUrl: apkUrl,
+          });
         }
       } catch (err) {
-        console.warn("Failed to fetch small logo:", err);
-        // Continue without logo - will show fallback
+        console.warn("Failed to fetch site settings:", err);
+        // Continue without logo and links - will show fallback
       }
     };
-    fetchSmallLogo();
+    fetchSiteSettings();
   }, []);
 
   // Handle ESC key to close modals and mobile menu
@@ -1699,8 +1716,11 @@ export default function HomePage() {
               <div className="flex flex-col gap-4">
                 {/* Google Play Button */}
                 <a
-                  href="#"
+                  href={downloadLinks.googlePlayUrl || "#"}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="group relative flex items-center gap-4 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-6 py-4 shadow-xl shadow-slate-900/30 transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-slate-900/40"
+                  onClick={(e) => !downloadLinks.googlePlayUrl && e.preventDefault()}
                 >
                   <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-white/10 to-transparent opacity-0 transition-opacity group-hover:opacity-100"></div>
                   <div className="relative flex items-center gap-4">
@@ -1726,8 +1746,11 @@ export default function HomePage() {
 
                 {/* App Store Button */}
                 <a
-                  href="#"
+                  href={downloadLinks.appStoreUrl || "#"}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="group relative flex items-center gap-4 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-6 py-4 shadow-xl shadow-slate-900/30 transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-slate-900/40"
+                  onClick={(e) => !downloadLinks.appStoreUrl && e.preventDefault()}
                 >
                   <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-white/10 to-transparent opacity-0 transition-opacity group-hover:opacity-100"></div>
                   <div className="relative flex items-center gap-4">
@@ -1753,8 +1776,10 @@ export default function HomePage() {
 
                 {/* Download APK Button */}
                 <a
-                  href="#"
+                  href={downloadLinks.apkDownloadUrl || "#"}
+                  download
                   className="group relative flex items-center gap-4 rounded-2xl bg-gradient-to-br from-primary via-primary/95 to-primary px-6 py-4 shadow-xl shadow-primary/40 ring-2 ring-primary/20 transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-primary/50 hover:ring-primary/40"
+                  onClick={(e) => !downloadLinks.apkDownloadUrl && e.preventDefault()}
                 >
                   <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-white/20 to-transparent opacity-0 transition-opacity group-hover:opacity-100"></div>
                   <div className="relative flex items-center gap-4">
