@@ -3316,7 +3316,7 @@ export default function BookDetailPage() {
                             if (!attachment.uploaded) {
                               const uploadUrl = `${API_BASE}/api/books/${bookId}/attachments`;
                               console.log("Uploading file to:", uploadUrl);
-                              console.log("File size:", attachment.file.size, "bytes");
+                              console.log("File size:", attachment.file?.size, "bytes");
                               console.log("Preview length:", attachment.preview.length);
 
                               try {
