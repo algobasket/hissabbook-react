@@ -76,7 +76,7 @@ export default function BookDetailPage() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTime, setSelectedTime] = useState(new Date());
   const [calculatedAmount, setCalculatedAmount] = useState<number | null>(null);
-  const [attachedFiles, setAttachedFiles] = useState<Array<{ id: string; file: File; preview: string; uploaded?: boolean; attachmentId?: string }>>([]);
+  const [attachedFiles, setAttachedFiles] = useState<Array<{ id: string; file?: File; preview: string; uploaded?: boolean; attachmentId?: string; existing?: boolean; file_name?: string; url?: string; mime_type?: string }>>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [formData, setFormData] = useState({
     date: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
@@ -334,7 +334,19 @@ export default function BookDetailPage() {
         if (attachmentsResponse.ok) {
           const attachmentsData = await attachmentsResponse.json();
           entry.attachments = attachmentsData.attachments || [];
-          console.log("Attachments fetched:", entry.attachments);
+          console.log("Attachments fetched from API:", entry.attachments);
+          console.log("Number of attachments:", entry.attachments.length);
+          if (entry.attachments.length > 0) {
+            entry.attachments.forEach((att: any, idx: number) => {
+              console.log(`Attachment ${idx + 1}:`, {
+                id: att.id,
+                file_name: att.file_name,
+                file_path: att.file_path,
+                url: att.url,
+                path: att.path
+              });
+            });
+          }
         } else {
           // If 404, it means no attachments found (which is fine)
           if (attachmentsResponse.status === 404) {
@@ -2097,6 +2109,11 @@ export default function BookDetailPage() {
                             onClick={() => {
                               // Fetch entry details with attachments
                               fetchEntryWithAttachments(entry.id).then((entryWithAttachments) => {
+                                console.log("Entry with attachments loaded:", entryWithAttachments);
+                                console.log("Attachments count:", entryWithAttachments?.attachments?.length || 0);
+                                if (entryWithAttachments?.attachments) {
+                                  console.log("Attachment details:", entryWithAttachments.attachments);
+                                }
                                 setSelectedEntry(entryWithAttachments || entry);
                               }).catch((err) => {
                                 console.error("Error loading entry details:", err);
@@ -3108,12 +3125,17 @@ export default function BookDetailPage() {
                         className="hidden"
                         onChange={(e) => {
                           const files = Array.from(e.target.files || []);
+                          console.log('File input changed, files selected:', files.length);
+                          console.log('Current attachedFiles count:', attachedFiles.length);
+                          
                           if (files.length + attachedFiles.length > 4) {
                             alert("You can only attach up to 4 files");
                             return;
                           }
 
                           files.forEach((file) => {
+                            console.log('Processing file:', file.name, file.type, file.size);
+                            
                             // Validate file type
                             const isValidImage = file.type.startsWith('image/');
                             const isValidPdf = file.type === 'application/pdf';
@@ -3131,15 +3153,22 @@ export default function BookDetailPage() {
                             const reader = new FileReader();
                             reader.onload = (e) => {
                               const preview = e.target?.result as string;
-                              setAttachedFiles((prev) => [
-                                ...prev,
-                                {
-                                  id: `${Date.now()}-${Math.random()}`,
-                                  file,
-                                  preview,
-                                  uploaded: false,
-                                },
-                              ]);
+                              const newAttachment = {
+                                id: `${Date.now()}-${Math.random()}`,
+                                file,
+                                preview,
+                                uploaded: false,
+                              };
+                              console.log('Adding new attachment to state:', newAttachment.id, file.name);
+                              setAttachedFiles((prev) => {
+                                const updated = [...prev, newAttachment];
+                                console.log('Updated attachedFiles count:', updated.length);
+                                return updated;
+                              });
+                            };
+                            reader.onerror = (error) => {
+                              console.error('FileReader error:', error);
+                              alert(`Failed to read file: ${file.name}`);
                             };
                             reader.readAsDataURL(file);
                           });
@@ -3162,48 +3191,100 @@ export default function BookDetailPage() {
                       </p>
 
                       {/* Display attached files */}
-                      {attachedFiles.length > 0 && (
-                        <div className="mt-3 space-y-2">
-                          {attachedFiles.map((attachment) => (
-                            <div
-                              key={attachment.id}
-                              className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3"
-                            >
-                              {attachment.file.type.startsWith('image/') ? (
-                                <img
-                                  src={attachment.preview}
-                                  alt={attachment.file.name}
-                                  className="h-12 w-12 rounded object-cover"
-                                />
-                              ) : (
-                                <div className="flex h-12 w-12 items-center justify-center rounded bg-red-50">
+                      {(() => {
+                        console.log('Rendering attached files list, count:', attachedFiles.length);
+                        console.log('Attached files:', attachedFiles);
+                        return attachedFiles.length > 0 ? (
+                          <div className="mt-3 space-y-2">
+                            {attachedFiles.map((attachment) => {
+                              console.log('Rendering attachment:', attachment.id, 'uploaded:', attachment.uploaded, 'has file:', !!attachment.file);
+                            // Determine if it's an image
+                            const isImage = attachment.file 
+                              ? attachment.file.type.startsWith('image/')
+                              : (attachment.mime_type?.startsWith('image/') || attachment.preview.match(/\.(jpg|jpeg|png|gif|webp)$/i));
+                            const fileName = attachment.file?.name || attachment.file_name || 'Attachment';
+                            const fileSize = attachment.file?.size;
+                            
+                            return (
+                              <div
+                                key={attachment.id}
+                                className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3"
+                              >
+                                {isImage ? (
+                                  <img
+                                    src={attachment.preview}
+                                    alt={fileName}
+                                    className="h-12 w-12 rounded object-cover"
+                                    onError={(e) => {
+                                      // If image fails to load, show placeholder
+                                      e.currentTarget.style.display = 'none';
+                                      const parent = e.currentTarget.parentElement;
+                                      if (parent) {
+                                        const placeholder = parent.querySelector('.image-placeholder');
+                                        if (placeholder) placeholder.classList.remove('hidden');
+                                      }
+                                    }}
+                                  />
+                                ) : null}
+                                <div className={`h-12 w-12 items-center justify-center rounded bg-red-50 ${isImage ? 'hidden image-placeholder' : 'flex'}`}>
                                   <svg className="h-6 w-6 text-red-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                                   </svg>
                                 </div>
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <p className="truncate text-sm font-medium text-slate-700">{attachment.file.name}</p>
-                                <p className="text-xs text-slate-500">
-                                  {(attachment.file.size / 1024).toFixed(1)} KB
-                                  {attachment.uploaded && <span className="ml-2 text-emerald-600">✓ Uploaded</span>}
-                                </p>
+                                <div className="flex-1 min-w-0">
+                                  <p className="truncate text-sm font-medium text-slate-700">{fileName}</p>
+                                  <p className="text-xs text-slate-500">
+                                    {fileSize ? `${(fileSize / 1024).toFixed(1)} KB` : ''}
+                                    {attachment.existing && <span className="ml-2 text-blue-600">Existing</span>}
+                                    {attachment.uploaded && !attachment.existing && <span className="ml-2 text-emerald-600">✓ Uploaded</span>}
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    // If it's an existing attachment or a newly uploaded one (has attachmentId), delete it from the server
+                                    if (attachment.attachmentId) {
+                                      try {
+                                        const token = getAuthToken();
+                                        if (token) {
+                                          const deleteUrl = `${API_BASE}/api/books/${bookId}/attachments/${attachment.attachmentId}`;
+                                          const response = await fetch(deleteUrl, {
+                                            method: 'DELETE',
+                                            headers: {
+                                              Authorization: `Bearer ${token}`,
+                                              // Don't set Content-Type for DELETE requests without body
+                                            },
+                                          });
+                                          
+                                          if (!response.ok) {
+                                            const errorData = await response.json().catch(() => ({ message: 'Failed to delete attachment' }));
+                                            console.error('Failed to delete attachment:', errorData);
+                                            alert(`Failed to delete attachment: ${errorData.message || 'Unknown error'}`);
+                                            return; // Don't remove from UI if deletion failed
+                                          }
+                                        }
+                                      } catch (error) {
+                                        console.error('Error deleting attachment:', error);
+                                        alert(`Error deleting attachment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                                        return; // Don't remove from UI if deletion failed
+                                      }
+                                    }
+                                    
+                                    // Remove from UI state
+                                    setAttachedFiles((prev) => prev.filter((f) => f.id !== attachment.id));
+                                  }}
+                                  className="rounded-lg p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
+                                >
+                                  <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setAttachedFiles((prev) => prev.filter((f) => f.id !== attachment.id));
-                                }}
-                                className="rounded-lg p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
-                              >
-                                <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                            );
+                            })}
+                          </div>
+                        ) : null;
+                      })()}
                     </div>
 
                     {/* Additional Fields */}
@@ -3301,8 +3382,9 @@ export default function BookDetailPage() {
                       }
 
                       // Save the entry with all form data and attachment IDs
+                      // Collect attachment IDs: include both existing attachments and newly uploaded ones
                       const attachmentIds = attachedFiles
-                        .filter((f) => f.uploaded && f.attachmentId)
+                        .filter((f) => (f.existing && f.attachmentId) || (f.uploaded && f.attachmentId))
                         .map((f) => f.attachmentId!);
 
                       // Parse date and time
@@ -3394,6 +3476,12 @@ export default function BookDetailPage() {
                   <button
                     type="button"
                     onClick={async () => {
+                      console.log("Update button clicked, editingEntry:", editingEntry);
+                      console.log("Current attachedFiles:", attachedFiles);
+                      
+                      // Track uploaded attachment IDs as we go (for newly uploaded files)
+                      const uploadedAttachmentIds: string[] = [];
+                      
                       // Upload files first
                       if (attachedFiles.length > 0) {
                         setUploadingFiles(true);
@@ -3404,12 +3492,16 @@ export default function BookDetailPage() {
                           }
 
                           // Upload each file that hasn't been uploaded yet
+                          const filesToUpload = attachedFiles.filter(f => !f.uploaded && f.file);
+                          console.log("Update: Files to upload:", filesToUpload.length, "out of", attachedFiles.length, "total attachments");
+                          
                           for (const attachment of attachedFiles) {
-                            if (!attachment.uploaded) {
+                            if (!attachment.uploaded && attachment.file) {
                               const uploadUrl = `${API_BASE}/api/books/${bookId}/attachments`;
-                              console.log("Uploading file to:", uploadUrl);
-                              console.log("File size:", attachment.file.size, "bytes");
-                              console.log("Preview length:", attachment.preview.length);
+                              console.log("Update: Uploading file to:", uploadUrl);
+                              console.log("Update: File name:", attachment.file.name);
+                              console.log("Update: File size:", attachment.file.size, "bytes");
+                              console.log("Update: Preview length:", attachment.preview.length);
 
                               try {
                                 const response = await fetch(uploadUrl, {
@@ -3438,17 +3530,28 @@ export default function BookDetailPage() {
                                 }
 
                                 const data = await response.json();
-                                console.log("Upload successful:", data);
-                                // Mark as uploaded
-                                setAttachedFiles((prev) =>
-                                  prev.map((f) =>
+                                console.log("Update: Upload successful:", data);
+                                console.log("Update: Updating state for attachment:", attachment.id, "with attachmentId:", data.attachment.id);
+                                
+                                // Track the uploaded attachment ID
+                                if (data.attachment?.id) {
+                                  uploadedAttachmentIds.push(data.attachment.id);
+                                  console.log("Update: Added to uploadedAttachmentIds:", data.attachment.id);
+                                }
+                                
+                                // Mark as uploaded - this should update the UI immediately
+                                setAttachedFiles((prev) => {
+                                  const updated = prev.map((f) =>
                                     f.id === attachment.id
                                       ? { ...f, uploaded: true, attachmentId: data.attachment.id }
                                       : f
-                                  )
-                                );
+                                  );
+                                  console.log("Update: State updated, new attachedFiles count:", updated.length);
+                                  console.log("Update: Uploaded files:", updated.filter(f => f.uploaded).length);
+                                  return updated;
+                                });
                               } catch (fetchError) {
-                                console.error("Fetch error:", fetchError);
+                                console.error("Update: Fetch error:", fetchError);
                                 // Re-throw with more context
                                 if (fetchError instanceof TypeError && fetchError.message === "Failed to fetch") {
                                   throw new Error(`Network error: Cannot reach server at ${uploadUrl}. Please check:\n1. Backend server is running on port 5000\n2. CORS is configured correctly\n3. API_BASE is set correctly (current: ${API_BASE})`);
@@ -3457,6 +3560,10 @@ export default function BookDetailPage() {
                               }
                             }
                           }
+                          
+                          // After all uploads complete, log what we've collected
+                          console.log("Update: All files uploaded");
+                          console.log("Update: Newly uploaded attachment IDs:", uploadedAttachmentIds);
                         } catch (err) {
                           console.error("Error uploading files:", err);
                           const errorMessage = err instanceof Error ? err.message : "Failed to upload files";
@@ -3474,12 +3581,22 @@ export default function BookDetailPage() {
                       }
 
                       // Save the entry with all form data and attachment IDs
-                      const attachmentIds = attachedFiles
-                        .filter((f) => f.uploaded && f.attachmentId)
+                      // Collect attachment IDs: include both existing attachments and newly uploaded ones
+                      // Use the uploadedAttachmentIds array we collected during upload, plus existing ones from state
+                      const existingAttachmentIds = attachedFiles
+                        .filter((f) => f.existing && f.attachmentId)
                         .map((f) => f.attachmentId!);
-
-                      console.log("Saving entry with attachmentIds:", attachmentIds);
-                      console.log("Attached files:", attachedFiles);
+                      
+                      // Combine existing and newly uploaded attachment IDs
+                      const allAttachmentIds = [...existingAttachmentIds, ...uploadedAttachmentIds];
+                      
+                      // Remove duplicates (in case of any overlap)
+                      const attachmentIds = Array.from(new Set(allAttachmentIds));
+                      
+                      console.log("Update: Existing attachment IDs:", existingAttachmentIds);
+                      console.log("Update: Newly uploaded attachment IDs:", uploadedAttachmentIds);
+                      console.log("Update: Final attachmentIds to send:", attachmentIds);
+                      console.log("Update: Total attachments to link:", attachmentIds.length);
 
                       // Parse date and time
                       const dateStr = selectedDate.toISOString().split('T')[0];
@@ -4001,45 +4118,44 @@ export default function BookDetailPage() {
                 )}
 
                 {/* Attachment */}
-                {selectedEntry.attachments && selectedEntry.attachments.length > 0 ? (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Attachment</label>
-                    <div className="grid grid-cols-2 gap-3">
-                      {selectedEntry.attachments.map((attachment: any, index: number) => {
+                {(() => {
+                  console.log("Rendering Entry Details - selectedEntry:", selectedEntry);
+                  console.log("selectedEntry.attachments:", selectedEntry.attachments);
+                  console.log("Attachments length:", selectedEntry.attachments?.length || 0);
+                  
+                  return selectedEntry.attachments && selectedEntry.attachments.length > 0 ? (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Attachment</label>
+                      <div className="grid grid-cols-2 gap-3">
+                        {selectedEntry.attachments.map((attachment: any, index: number) => {
+                          console.log(`Rendering attachment ${index + 1}:`, attachment);
                         // Handle different possible attachment data structures
                         const fileName = attachment.file_name || attachment.name || attachment.filename || `Attachment ${index + 1}`;
-                        const filePath = attachment.file_path || attachment.path || attachment.url;
+                        const filePath = attachment.file_path || attachment.path;
                         const fileType = attachment.mime_type || attachment.file_type || attachment.type || '';
                         const attachmentId = attachment.id;
                         
-                        // Construct URL - handle both absolute URLs and relative paths
-                        let attachmentUrl = attachment.url;
-                        if (!attachmentUrl && filePath) {
-                          // If path starts with /, it's already a full path
-                          if (filePath.startsWith('/')) {
+                        // Construct URL - handle R2 URLs and local paths
+                        // Priority: file_path (which may contain R2 URL) > url (API-constructed) > path
+                        // Check file_path first as it should contain the R2 URL if available
+                        let attachmentUrl = filePath || attachment.url || attachment.path;
+                        
+                        if (attachmentUrl) {
+                          // If it's already a full URL (R2 or external), use it directly
+                          if (attachmentUrl.startsWith('http://') || attachmentUrl.startsWith('https://')) {
+                            // Already a full URL (R2 URL), use as-is
+                            // No modification needed
+                          } else if (attachmentUrl.startsWith('/')) {
+                            // Relative path starting with /, construct local URL
                             // Remove any existing /backend/ prefix to avoid duplication
-                            let cleanPath = filePath;
+                            let cleanPath = attachmentUrl;
                             if (cleanPath.startsWith('/backend/')) {
                               cleanPath = cleanPath.replace(/^\/backend/, '');
                             }
                             attachmentUrl = `${API_BASE}${cleanPath}`;
-                          } else if (filePath.startsWith('http')) {
-                            attachmentUrl = filePath;
                           } else {
-                            attachmentUrl = `${API_BASE}/${filePath}`;
-                          }
-                        } else if (attachmentUrl && attachmentUrl.startsWith('/')) {
-                          // Remove any existing /backend/ prefix to avoid duplication
-                          let cleanUrl = attachmentUrl;
-                          if (cleanUrl.startsWith('/backend/')) {
-                            cleanUrl = cleanUrl.replace(/^\/backend/, '');
-                          }
-                          // If URL is relative (starts with /), prepend API_BASE
-                          attachmentUrl = `${API_BASE}${cleanUrl}`;
-                        } else if (attachmentUrl && !attachmentUrl.startsWith('http')) {
-                          // Handle case where URL might already have /backend/ prefix
-                          if (attachmentUrl.startsWith('/backend/')) {
-                            attachmentUrl = attachmentUrl; // Already correct
+                            // Relative path without leading slash, construct local URL
+                            attachmentUrl = `${API_BASE}/${attachmentUrl}`;
                           }
                         }
                         
@@ -4082,16 +4198,22 @@ export default function BookDetailPage() {
                             </div>
                           </div>
                         );
-                      })}
+                        })}
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  // Show placeholder if no attachments but entry might have them
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Attachment</label>
-                    <div className="text-sm text-slate-500 italic">No attachments</div>
-                  </div>
-                )}
+                  ) : (
+                    // Show placeholder if no attachments but entry might have them
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Attachment</label>
+                      <div className="text-sm text-slate-500 italic">No attachments</div>
+                      {process.env.NODE_ENV === 'development' && (
+                        <div className="text-xs text-slate-400 mt-1">
+                          Debug: selectedEntry.attachments = {selectedEntry.attachments ? JSON.stringify(selectedEntry.attachments) : 'undefined'}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Tags */}
                 <div>
@@ -4200,7 +4322,7 @@ export default function BookDetailPage() {
                 )}
                 {userPermissions.includes("cashbooks.update") && (
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       setEditingEntry(selectedEntry);
                       setEntryType(selectedEntry.entry_type);
                       // Pre-fill form with entry data
@@ -4222,9 +4344,39 @@ export default function BookDetailPage() {
                       setPaymentModeSearch(selectedEntry.payment_mode || "Cash");
                       setSelectedParty(selectedEntry.party_id || null);
                       setSelectedCategory(selectedEntry.category_id || null);
+                      
+                      // Fetch entry with attachments to ensure we have the latest data
+                      const entryWithAttachments = await fetchEntryWithAttachments(selectedEntry.id);
+                      
                       // Load attachments if any
-                      if (selectedEntry.attachments && selectedEntry.attachments.length > 0) {
-                        // TODO: Load existing attachments
+                      if (entryWithAttachments?.attachments && entryWithAttachments.attachments.length > 0) {
+                        // Convert existing attachments to the format expected by attachedFiles
+                        const existingAttachments = entryWithAttachments.attachments.map((att: any) => {
+                          // Construct preview URL - handle R2 URLs and local paths
+                          let previewUrl = att.url || att.path || att.file_path || '';
+                          if (previewUrl && !previewUrl.startsWith('http://') && !previewUrl.startsWith('https://')) {
+                            // It's a local path, construct full URL
+                            if (previewUrl.startsWith('/')) {
+                              previewUrl = `${API_BASE}${previewUrl}`;
+                            } else {
+                              previewUrl = `${API_BASE}/${previewUrl}`;
+                            }
+                          }
+                          
+                          return {
+                            id: att.id,
+                            attachmentId: att.id,
+                            preview: previewUrl,
+                            uploaded: true,
+                            existing: true,
+                            file_name: att.file_name,
+                            url: att.url || att.path || att.file_path,
+                            mime_type: att.mime_type || att.file_type,
+                          };
+                        });
+                        setAttachedFiles(existingAttachments);
+                      } else {
+                        setAttachedFiles([]);
                       }
                       setShowCashEntryModal(true);
                       setSelectedEntry(null);
@@ -4949,23 +5101,17 @@ export default function BookDetailPage() {
 
               {/* Content */}
               <div className="p-6">
-                {/* Filename */}
-                <div className="mb-4">
-                  <p className="text-sm font-medium text-slate-700">
-                    {previewAttachment.file_name || previewAttachment.name || 'Attachment'}
-                  </p>
-                </div>
-
                 {/* Image/File Preview */}
                 <div className="flex items-center justify-center bg-slate-50 rounded-lg min-h-[400px] max-h-[70vh] overflow-auto">
                   {(() => {
-                    // Construct full URL - handle relative paths
+                    // Construct full URL - handle R2 URLs and local paths
                     let attachmentUrl = previewAttachment.url || previewAttachment.path || previewAttachment.file_path;
                     if (attachmentUrl) {
-                      // If URL already starts with http/https, use it as-is
+                      // If URL already starts with http/https (R2 URL), use it as-is
                       if (attachmentUrl.startsWith('http://') || attachmentUrl.startsWith('https://')) {
-                        // Already a full URL, use as-is
+                        // Already a full URL (R2 URL), use as-is - no modification needed
                       } else if (attachmentUrl.startsWith('/')) {
+                        // Relative path starting with /, construct local URL
                         // Normalize API_BASE (remove trailing slash)
                         const apiBaseNormalized = API_BASE.replace(/\/$/, '');
                         
@@ -4983,8 +5129,8 @@ export default function BookDetailPage() {
                           // Prepend API_BASE
                           attachmentUrl = `${apiBaseNormalized}${cleanUrl}`;
                         }
-                      } else if (!attachmentUrl.startsWith('http')) {
-                        // Relative path without leading slash
+                      } else {
+                        // Relative path without leading slash, construct local URL
                         attachmentUrl = `${API_BASE}/${attachmentUrl}`;
                       }
                     }
@@ -5029,44 +5175,55 @@ export default function BookDetailPage() {
                   Close
                 </button>
                 <button
-                  onClick={() => {
-                    // Construct full URL - handle relative paths
+                  onClick={async () => {
+                    // Construct full URL - handle R2 URLs and local paths
                     let attachmentUrl = previewAttachment.url || previewAttachment.path || previewAttachment.file_path;
                     if (attachmentUrl) {
-                      if (attachmentUrl.startsWith('/')) {
+                      // If it's already a full URL (R2 URL), use it directly
+                      if (attachmentUrl.startsWith('http://') || attachmentUrl.startsWith('https://')) {
+                        // Already a full URL (R2 URL), use as-is
+                      } else if (attachmentUrl.startsWith('/')) {
+                        // Relative path starting with /, construct local URL
                         attachmentUrl = `${API_BASE}${attachmentUrl}`;
-                      } else if (!attachmentUrl.startsWith('http')) {
+                      } else {
+                        // Relative path without leading slash, construct local URL
                         attachmentUrl = `${API_BASE}/${attachmentUrl}`;
                       }
                     }
+                    
                     const fileName = previewAttachment.file_name || previewAttachment.name || 'attachment';
+                    const isR2Url = attachmentUrl && (attachmentUrl.startsWith('http://') || attachmentUrl.startsWith('https://'));
                     
-                    // Create a temporary anchor element to trigger download
-                    const link = document.createElement('a');
-                    link.href = attachmentUrl;
-                    link.download = fileName;
-                    link.target = '_blank';
-                    
-                    // Add authorization header if needed (for protected files)
-                    // For now, we'll use a simple approach
-                    fetch(attachmentUrl, {
-                      headers: {
-                        Authorization: `Bearer ${getAuthToken()}`,
-                      },
-                    })
-                      .then(response => response.blob())
-                      .then(blob => {
-                        const url = window.URL.createObjectURL(blob);
-                        link.href = url;
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        window.URL.revokeObjectURL(url);
-                      })
-                      .catch(() => {
-                        // Fallback: open in new tab if download fails
-                        window.open(attachmentUrl, '_blank');
-                      });
+                    try {
+                      // For R2 URLs (public) or local URLs, fetch the file and download it
+                      const headers = isR2Url 
+                        ? {} // R2 URLs are public, no auth needed
+                        : { Authorization: `Bearer ${getAuthToken()}` }; // Local URLs need auth
+                      
+                      const response = await fetch(attachmentUrl, { headers });
+                      
+                      if (!response.ok) {
+                        throw new Error(`Failed to fetch file: ${response.status}`);
+                      }
+                      
+                      const blob = await response.blob();
+                      const blobUrl = window.URL.createObjectURL(blob);
+                      
+                      // Create download link
+                      const link = document.createElement('a');
+                      link.href = blobUrl;
+                      link.download = fileName;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      
+                      // Clean up blob URL
+                      window.URL.revokeObjectURL(blobUrl);
+                    } catch (error) {
+                      console.error('Download error:', error);
+                      // Fallback: open in new tab if download fails
+                      window.open(attachmentUrl, '_blank');
+                    }
                   }}
                   className="rounded-lg bg-[#2f4bff] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2f4bff]/90 transition"
                 >

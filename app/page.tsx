@@ -660,8 +660,8 @@ export default function HomePage() {
               {/* App Buttons */}
               <div className="flex flex-row flex-wrap items-center justify-center gap-5 md:gap-6 lg:gap-8">
                 {/* Google Play Button */}
-                <a
-                  href="#"
+                <button
+                  onClick={() => setIsDownloadModalOpen(true)}
                   className="group relative flex items-center gap-4 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-7 py-5 shadow-2xl shadow-slate-900/30 transition-all duration-300 hover:scale-110 hover:shadow-3xl hover:shadow-slate-900/40 hover:-translate-y-1"
                 >
                   <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-white/10 to-transparent opacity-0 transition-opacity group-hover:opacity-100"></div>
@@ -684,11 +684,11 @@ export default function HomePage() {
                       </span>
                     </div>
                   </div>
-                </a>
+                </button>
 
                 {/* App Store Button */}
-                <a
-                  href="#"
+                <button
+                  onClick={() => setIsDownloadModalOpen(true)}
                   className="group relative flex items-center gap-4 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-7 py-5 shadow-2xl shadow-slate-900/30 transition-all duration-300 hover:scale-110 hover:shadow-3xl hover:shadow-slate-900/40 hover:-translate-y-1"
                 >
                   <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-white/10 to-transparent opacity-0 transition-opacity group-hover:opacity-100"></div>
@@ -711,7 +711,7 @@ export default function HomePage() {
                       </span>
                     </div>
                   </div>
-                </a>
+                </button>
 
                 {/* HissabBook Web Button */}
                 <a
@@ -740,7 +740,7 @@ export default function HomePage() {
                         HissabBook Web
                       </span>
                       <span className="text-lg font-extrabold text-white leading-tight">
-                        web.hissabbook.in
+                        hissabbook.com
                       </span>
                     </div>
                   </div>
@@ -1594,7 +1594,7 @@ export default function HomePage() {
         </section>
       </main>
 
-      <Footer />
+      <Footer onDownloadClick={() => setIsDownloadModalOpen(true)} />
 
       {/* Video Modal */}
       {isVideoModalOpen && (

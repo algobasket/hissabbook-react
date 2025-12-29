@@ -8,7 +8,11 @@ const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ||
     ? "http://localhost:5000"
     : "/backend");
 
-export default function Footer() {
+interface FooterProps {
+  onDownloadClick?: () => void;
+}
+
+export default function Footer({ onDownloadClick }: FooterProps) {
   const [smallLogoUrl, setSmallLogoUrl] = useState<string | null>(null);
 
   // Fetch small logo from site settings
@@ -207,7 +211,10 @@ export default function Footer() {
 
           {/* App Download Buttons */}
           <div className="flex flex-wrap items-center gap-3">
-            <button className="group relative flex items-center gap-3 rounded-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-5 py-3 shadow-lg shadow-slate-900/20 transition-all hover:scale-105 hover:shadow-xl hover:shadow-slate-900/30">
+            <button 
+              onClick={onDownloadClick}
+              className="group relative flex items-center gap-3 rounded-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-5 py-3 shadow-lg shadow-slate-900/20 transition-all hover:scale-105 hover:shadow-xl hover:shadow-slate-900/30"
+            >
               <div className="absolute inset-0 rounded-full bg-gradient-to-br from-white/10 to-transparent opacity-0 transition-opacity group-hover:opacity-100"></div>
               <div className="relative flex items-center gap-3">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 backdrop-blur-sm">
@@ -223,7 +230,10 @@ export default function Footer() {
               </div>
             </button>
 
-            <button className="group relative flex items-center gap-3 rounded-full border-2 border-slate-300 bg-white px-5 py-3 shadow-lg transition-all hover:scale-105 hover:border-primary hover:shadow-xl hover:shadow-primary/10">
+            <button 
+              onClick={onDownloadClick}
+              className="group relative flex items-center gap-3 rounded-full border-2 border-slate-300 bg-white px-5 py-3 shadow-lg transition-all hover:scale-105 hover:border-primary hover:shadow-xl hover:shadow-primary/10"
+            >
               <div className="absolute inset-0 rounded-full bg-gradient-to-br from-primary/5 to-transparent opacity-0 transition-opacity group-hover:opacity-100"></div>
               <div className="relative flex items-center gap-3">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 transition-colors group-hover:bg-primary/10">

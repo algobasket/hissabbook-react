@@ -262,22 +262,28 @@ export default function ApprovalsPage() {
                       </tr>
                     ) : (
                       payoutRequests.map((request) => {
-                        // Construct proof URL - handle cases where filename might already include path
+                        // Construct proof URL - handle R2 URLs and local filenames
                         let proofUrl = null;
                         if (request.proofFilename) {
-                          let filename = request.proofFilename;
-                          // Remove any existing /uploads/ or /backend/uploads/ prefix
-                          filename = filename.replace(/^\/?(backend\/)?uploads\//, '');
-                          // Normalize API_BASE (remove trailing slash)
-                          const apiBaseNormalized = API_BASE.replace(/\/$/, '');
-                          proofUrl = `${apiBaseNormalized}/uploads/${filename}`;
+                          // Check if it's already a full URL (R2 URL)
+                          if (request.proofFilename.startsWith('http://') || request.proofFilename.startsWith('https://')) {
+                            // It's an R2 URL, use it directly
+                            proofUrl = request.proofFilename;
+                          } else {
+                            // It's a local filename, construct the URL
+                            let filename = request.proofFilename;
+                            // Remove any existing /uploads/ or /backend/uploads/ prefix
+                            filename = filename.replace(/^\/?(backend\/)?uploads\//, '');
+                            // Normalize API_BASE (remove trailing slash)
+                            const apiBaseNormalized = API_BASE.replace(/\/$/, '');
+                            proofUrl = `${apiBaseNormalized}/uploads/${filename}`;
+                          }
                           
                           // Debug logging (remove in production if needed)
                           if (process.env.NODE_ENV === 'development') {
                             console.log('Payout proof URL construction:', {
                               original: request.proofFilename,
-                              cleaned: filename,
-                              apiBase: API_BASE,
+                              isR2Url: request.proofFilename.startsWith('http'),
                               finalUrl: proofUrl
                             });
                           }
