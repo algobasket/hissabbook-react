@@ -322,8 +322,11 @@ export default function CashbooksPage() {
     if (!dateString) return "Never";
     const date = new Date(dateString);
     const now = new Date();
-    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-    const diffInDays = Math.floor(diffInSeconds / 86400);
+    
+    // Calculate calendar day difference (not just 24-hour periods)
+    const dateStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const nowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diffInDays = Math.floor((nowStart.getTime() - dateStart.getTime()) / (1000 * 60 * 60 * 24));
 
     if (diffInDays === 0) {
       return "Updated today";
