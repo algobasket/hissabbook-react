@@ -36,6 +36,10 @@ export default function ApprovalsPage() {
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
 
   useEffect(() => {
     setMounted(true);
@@ -52,8 +56,14 @@ export default function ApprovalsPage() {
         return;
       }
 
-      const statusParam = selectedStatus !== "all" ? `?status=${selectedStatus}` : "";
-      const response = await fetch(`${API_BASE}/api/payout-requests${statusParam}`, {
+      const params = new URLSearchParams();
+      if (selectedStatus !== "all") {
+        params.append("status", selectedStatus);
+      }
+      params.append("page", currentPage.toString());
+      params.append("limit", itemsPerPage.toString());
+
+      const response = await fetch(`${API_BASE}/api/payout-requests?${params.toString()}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -66,6 +76,10 @@ export default function ApprovalsPage() {
 
       const data = await response.json();
       setPayoutRequests(data.payoutRequests || []);
+      if (data.pagination) {
+        setTotalPages(data.pagination.totalPages);
+        setTotalItems(data.pagination.total);
+      }
     } catch (err: any) {
       console.error("Error fetching payout requests:", err);
       setError(err.message || "Failed to load payout requests");
@@ -79,7 +93,14 @@ export default function ApprovalsPage() {
     
     fetchPayoutRequests();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mounted, selectedStatus]);
+  }, [mounted, selectedStatus, currentPage, itemsPerPage]);
+
+  // Reset to page 1 when status changes
+  useEffect(() => {
+    if (mounted) {
+      setCurrentPage(1);
+    }
+  }, [selectedStatus, mounted]);
 
   const handleStatusUpdate = async (id: string, status: "accepted" | "rejected") => {
     if (processingId) return;
@@ -225,6 +246,20 @@ export default function ApprovalsPage() {
                   <option value="accepted">Accepted</option>
                   <option value="rejected">Rejected</option>
                 </select>
+                <label>Per Page</label>
+                <select
+                  value={itemsPerPage}
+                  onChange={(e) => {
+                    setItemsPerPage(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                >
+                  <option value="10">10</option>
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
               </div>
             </div>
 
@@ -369,6 +404,62 @@ export default function ApprovalsPage() {
                     )}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {/* Pagination Controls */}
+            {!loading && !error && payoutRequests.length > 0 && (
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
+                <div className="text-sm text-slate-600">
+                  Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems} requests
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Previous
+                  </button>
+                  
+                  {/* Page Numbers */}
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNum;
+                      if (totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (currentPage <= 3) {
+                        pageNum = i + 1;
+                      } else if (currentPage >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i;
+                      } else {
+                        pageNum = currentPage - 2 + i;
+                      }
+                      
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => setCurrentPage(pageNum)}
+                          className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                            currentPage === pageNum
+                              ? 'bg-primary text-white'
+                              : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
             )}
           </div>

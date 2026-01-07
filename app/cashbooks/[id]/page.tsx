@@ -2065,21 +2065,21 @@ export default function BookDetailPage() {
                         const paginatedEntries = entries.slice(startIndex, endIndex);
 
                         return paginatedEntries.map((entry: any) => {
-                        const entryDate = new Date(entry.entry_date);
-                        const day = entryDate.getDate();
-                        const month = entryDate.toLocaleDateString("en-GB", { month: "short" });
-                        const year = entryDate.getFullYear();
+                        // Use payout_request_created_at if available (for entries created from payout requests),
+                        // otherwise use created_at
+                        const displayDate = entry.payout_request_created_at || entry.created_at || entry.entry_date;
+                        const createdDate = new Date(displayDate);
+                        const day = createdDate.getDate();
+                        const month = createdDate.toLocaleDateString("en-GB", { month: "short" });
+                        const year = createdDate.getFullYear();
                         const formattedDate = `${day} ${month}, ${year}`;
-                        // Format time as "HH:MM AM/PM"
+                        // Format time as "HH:MM AM/PM" from the display date
                         let formattedTime = "";
-                        if (entry.entry_time) {
-                          const timeStr = entry.entry_time.substring(0, 5); // Get HH:MM
-                          const [hours, minutes] = timeStr.split(':');
-                          const hour24 = parseInt(hours);
-                          const hour12 = hour24 === 0 ? 12 : hour24 > 12 ? hour24 - 12 : hour24;
-                          const ampm = hour24 >= 12 ? 'PM' : 'AM';
-                          formattedTime = `${hour12.toString().padStart(2, '0')}:${minutes} ${ampm}`;
-                        }
+                        const hours = createdDate.getHours();
+                        const minutes = createdDate.getMinutes();
+                        const hour12 = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+                        const ampm = hours >= 12 ? 'PM' : 'AM';
+                        formattedTime = `${hour12.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} ${ampm}`;
 
                         // Determine attribution text shown under remarks
                         let attributionLabel = "by";
@@ -4696,15 +4696,23 @@ export default function BookDetailPage() {
                                         <>
                                           <td className="py-2 px-3 text-slate-700">
                                             <div>
-                                              {new Date(entry.entry_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-                                              {entry.entry_time && (() => {
-                                                const timeStr = entry.entry_time.substring(0, 5); // Get HH:MM
-                                                const [hours, minutes] = timeStr.split(':');
-                                                const hour24 = parseInt(hours);
-                                                const hour12 = hour24 === 0 ? 12 : hour24 > 12 ? hour24 - 12 : hour24;
-                                                const ampm = hour24 >= 12 ? 'PM' : 'AM';
-                                                const formattedTime = `${hour12.toString().padStart(2, '0')}:${minutes} ${ampm}`;
-                                                return <div className="text-xs text-slate-500">{formattedTime}</div>;
+                                              {(() => {
+                                                const displayDate = entry.payout_request_created_at || entry.created_at || entry.entry_date;
+                                                const createdDate = new Date(displayDate);
+                                                const day = createdDate.getDate();
+                                                const month = createdDate.toLocaleDateString("en-GB", { month: "short" });
+                                                const year = createdDate.getFullYear();
+                                                const hours = createdDate.getHours();
+                                                const minutes = createdDate.getMinutes();
+                                                const hour12 = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+                                                const ampm = hours >= 12 ? 'PM' : 'AM';
+                                                const formattedTime = `${hour12.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} ${ampm}`;
+                                                return (
+                                                  <>
+                                                    <div>{day} {month}, {year}</div>
+                                                    <div className="text-xs text-slate-500">{formattedTime}</div>
+                                                  </>
+                                                );
                                               })()}
                                             </div>
                                           </td>
@@ -4749,15 +4757,23 @@ export default function BookDetailPage() {
                                     <tr key={entry.id || index} className="border-b border-slate-100">
                                       <td className="py-2 px-3 text-slate-700">
                                         <div>
-                                          {new Date(entry.entry_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-                                          {entry.entry_time && (() => {
-                                            const timeStr = entry.entry_time.substring(0, 5); // Get HH:MM
-                                            const [hours, minutes] = timeStr.split(':');
-                                            const hour24 = parseInt(hours);
-                                            const hour12 = hour24 === 0 ? 12 : hour24 > 12 ? hour24 - 12 : hour24;
-                                            const ampm = hour24 >= 12 ? 'PM' : 'AM';
-                                            const formattedTime = `${hour12.toString().padStart(2, '0')}:${minutes} ${ampm}`;
-                                            return <div className="text-xs text-slate-500">{formattedTime}</div>;
+                                          {(() => {
+                                            const displayDate = entry.payout_request_created_at || entry.created_at || entry.entry_date;
+                                            const createdDate = new Date(displayDate);
+                                            const day = createdDate.getDate();
+                                            const month = createdDate.toLocaleDateString("en-GB", { month: "short" });
+                                            const year = createdDate.getFullYear();
+                                            const hours = createdDate.getHours();
+                                            const minutes = createdDate.getMinutes();
+                                            const hour12 = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+                                            const ampm = hours >= 12 ? 'PM' : 'AM';
+                                            const formattedTime = `${hour12.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} ${ampm}`;
+                                            return (
+                                              <>
+                                                <div>{day} {month}, {year}</div>
+                                                <div className="text-xs text-slate-500">{formattedTime}</div>
+                                              </>
+                                            );
                                           })()}
                                         </div>
                                       </td>
