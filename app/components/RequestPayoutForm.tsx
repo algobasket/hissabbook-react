@@ -60,6 +60,22 @@ export default function RequestPayoutForm() {
         return;
       }
 
+      // Check if UTR already exists
+      const utrCheckResponse = await fetch(`${API_BASE}/api/payout-requests/check-utr/${encodeURIComponent(utr)}`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (utrCheckResponse.ok) {
+        const utrCheckData = await utrCheckResponse.json();
+        if (utrCheckData.exists) {
+          setStatus({ type: "error", message: "UTR already existed in our record" });
+          return;
+        }
+      }
+
       const proof = await fileToBase64(file);
 
       const response = await fetch(`${API_BASE}/api/payout-requests`, {

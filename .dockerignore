@@ -9,4 +9,14 @@ README.md
 .DS_Store
 .vscode
 .idea
+*.md
+*.txt
+coverage
+.nyc_output
+dist
+build
+.cache
+.turbo
+.eslintcache
+*.tsbuildinfo
 

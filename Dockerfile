@@ -10,10 +10,10 @@ RUN npm config set fetch-timeout 300000 && \
     npm config set fetch-retry-maxtimeout 120000
 # Copy package files
 COPY package*.json ./
-# Install dependencies (including dev dependencies for build)
-RUN npm ci --prefer-offline --no-audit || \
-    (npm cache clean --force && npm ci --prefer-offline --no-audit) && \
-    npm cache clean --force
+# Install dependencies with BuildKit cache mount for faster rebuilds
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --prefer-offline --no-audit || \
+    (npm cache clean --force && npm ci --prefer-offline --no-audit)
 
 # Builder stage
 FROM node:20-alpine AS builder
