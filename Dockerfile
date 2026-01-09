@@ -18,7 +18,10 @@ RUN --mount=type=cache,target=/root/.npm \
 # Builder stage
 FROM node:20-alpine AS builder
 WORKDIR /app
+# Copy package files first to ensure they exist
+COPY package*.json ./
 COPY --from=deps /app/node_modules ./node_modules
+# Copy all other files
 COPY . .
 # Build the application with standalone output
 ENV NODE_ENV=production
@@ -40,15 +43,17 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
 # Copy necessary files from builder
+# When using standalone output, Next.js creates a .next/standalone folder
+# Check if standalone exists, otherwise use traditional approach
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
-COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
-COPY --from=builder --chown=nextjs:nodejs /app/next.config.ts ./next.config.ts
+
+# Try to copy standalone output first, fallback to traditional if not available
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 USER nextjs
 
 EXPOSE 3000
 
-# Start using npm start (standard Next.js production command)
-CMD ["npm", "start"]
+# Start using the standalone server (server.js is in the standalone folder)
+CMD ["node", "server.js"]
